@@ -1,0 +1,9 @@
+{{template "head" (dict "Title" "Terjadi kesalahan")}}
+
+<section class="card">
+  <h1>{{.Message}}</h1>
+  {{if .Detail}}<p class="evidence">{{.Detail}}</p>{{end}}
+  <p><a class="btn" href="/">Kembali</a></p>
+</section>
+
+{{template "foot"}}

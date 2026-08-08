@@ -256,13 +256,19 @@ func (p *Pipeline) assembleNode(ctx context.Context, s graph.State) (any, error)
 	}
 
 	if tri := st.Triage(); tri != nil && !tri.Substantive {
-		rep.AddFinding(docmodel.Finding{
-			Class:      docmodel.ClassAdvisory,
-			Category:   docmodel.CatMeaningChange,
-			Severity:   docmodel.SeverityInfo,
-			Message:    "Tidak ada perubahan substantif terdeteksi. " + tri.Reason,
-			Confidence: 1,
-		})
+		// Only claim the changes were examined and found harmless when they
+		// actually were. With the AI tier switched off nothing looked at
+		// meaning at all, and saying otherwise would overstate what the report
+		// covers — the opposite of what the verified/advisory split is for.
+		if !st.Options().NoLLM {
+			rep.AddFinding(docmodel.Finding{
+				Class:      docmodel.ClassAdvisory,
+				Category:   docmodel.CatMeaningChange,
+				Severity:   docmodel.SeverityInfo,
+				Message:    "Tidak ada perubahan substantif terdeteksi. " + tri.Reason,
+				Confidence: 1,
+			})
+		}
 		docmodel.SortFindings(rep.Findings)
 		st.Sink().setReport(rep)
 		return setReport(rep), nil

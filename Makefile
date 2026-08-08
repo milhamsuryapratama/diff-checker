@@ -58,6 +58,19 @@ run: ## Jalankan server pengembangan di :8080
 demo: ## Bandingkan pasangan dokumen contoh (tanpa LLM)
 	go run ./cmd/diffctl compare testdata/pair01/prev.txt testdata/pair01/curr.txt --changes
 
+.PHONY: demo-scenarios
+demo-scenarios: ## Jalankan seluruh skenario fixture lewat mesin deterministik
+	@for d in testdata/scenarios/*/; do \
+		name=$$(basename $$d); \
+		echo "=== $$name ==="; \
+		go run ./cmd/diffctl compare $$d/prev.docx $$d/curr.docx || true; \
+		echo; \
+	done
+
+.PHONY: fixtures
+fixtures: ## Regenerasi fixture DOCX/PDF di testdata/scenarios
+	go run ./testdata/gen
+
 .PHONY: clean
 clean: ## Hapus artefak build
 	rm -rf $(BINDIR) coverage.out

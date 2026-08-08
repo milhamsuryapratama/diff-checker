@@ -1,0 +1,30 @@
+{{define "head"}}
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — diff-checker</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">diff-checker</a>
+  <span class="tagline">Pemeriksa integritas penomoran &amp; rujukan silang dokumen hukum</span>
+</header>
+<main>
+{{end}}
+
+{{define "foot"}}
+</main>
+<footer>
+  <p>
+    Temuan <span class="badge badge-verified">terverifikasi</span> dihasilkan mesin
+    deterministik dan dapat direproduksi.
+    Temuan <span class="badge badge-advisory">saran AI</span> dihasilkan model bahasa
+    dan perlu ditinjau manusia.
+  </p>
+</footer>
+</body>
+</html>
+{{end}}

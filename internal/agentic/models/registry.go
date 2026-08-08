@@ -9,6 +9,7 @@ package models
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/model"
@@ -200,7 +201,14 @@ func NewRegistry(specs map[Tier]Spec) *Registry {
 // Configured reports whether every tier has the credentials it needs. The
 // server uses this to decide whether to offer the AI tier at all, rather than
 // letting a job fail on its first model call.
+//
+// A registry with no tiers at all is not configured. Reporting it as ready
+// would be the worst kind of wrong: the UI would offer AI analysis and every
+// job that accepted the offer would fail at its first model call.
 func (r *Registry) Configured() bool {
+	if r == nil || len(r.specs) == 0 {
+		return false
+	}
 	for _, spec := range r.specs {
 		if spec.APIKey == "" {
 			return false
@@ -211,12 +219,16 @@ func (r *Registry) Configured() bool {
 
 // Missing names the tiers that cannot run, for a precise error message.
 func (r *Registry) Missing() []string {
+	if r == nil || len(r.specs) == 0 {
+		return []string{"tidak ada tier model yang dikonfigurasi"}
+	}
 	var out []string
 	for tier, spec := range r.specs {
 		if spec.APIKey == "" {
 			out = append(out, fmt.Sprintf("%s (%s)", tier, spec.Provider))
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 

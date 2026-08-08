@@ -1,0 +1,74 @@
+{{template "head" (dict "Title" "Bandingkan dokumen")}}
+
+<section class="card">
+  <h1>Bandingkan dua versi dokumen</h1>
+  <p class="lede">
+    Unggah versi lama dan versi baru. Pemeriksaan penomoran dan rujukan silang
+    berjalan tanpa AI — gratis, cepat, dan hasilnya sama setiap kali.
+  </p>
+
+  <form method="post" action="/compare" enctype="multipart/form-data" class="upload">
+    <div class="fields">
+      <label class="field">
+        <span class="label">Versi lama</span>
+        <input type="file" name="prev" required accept=".docx,.pdf,.txt,.md">
+      </label>
+      <label class="field">
+        <span class="label">Versi baru</span>
+        <input type="file" name="curr" required accept=".docx,.pdf,.txt,.md">
+      </label>
+    </div>
+
+    <div class="ai-toggle">
+      {{if .AIAvailable}}
+        <label>
+          <input type="checkbox" name="use_ai">
+          <span>Jalankan analisis AI (klasifikasi makna + risiko hukum &amp; rekomendasi)</span>
+        </label>
+      {{else}}
+        <label class="disabled">
+          <input type="checkbox" disabled>
+          <span>Analisis AI tidak tersedia — API key belum diset untuk: {{.AIMissing}}</span>
+        </label>
+        <p class="hint">
+          Pemeriksaan deterministik tetap berjalan penuh tanpa API key.
+        </p>
+      {{end}}
+    </div>
+
+    <button type="submit">Bandingkan</button>
+    <p class="hint">Format: .docx, .pdf, .txt, .md — maksimal 32&nbsp;MB per berkas.</p>
+  </form>
+</section>
+
+{{if .Jobs}}
+<section class="card">
+  <h2>Perbandingan terakhir</h2>
+  <table class="jobs">
+    <thead>
+      <tr><th>Dokumen</th><th>Status</th><th>Temuan</th><th>Waktu</th></tr>
+    </thead>
+    <tbody>
+    {{range .Jobs}}
+      <tr>
+        <td>
+          <a href="/jobs/{{.ID}}">{{.PrevName}} → {{.CurrName}}</a>
+          {{if .UseAI}}<span class="chip">AI</span>{{end}}
+        </td>
+        <td><span class="status status-{{.Status}}">{{.Status}}</span></td>
+        <td>
+          {{if .Report}}
+            {{if .Report.Summary.Critical}}<span class="sev-critical">{{.Report.Summary.Critical}} kritis</span>{{end}}
+            {{if .Report.Summary.Major}}<span class="sev-major">{{.Report.Summary.Major}} mayor</span>{{end}}
+            {{if and (not .Report.Summary.Critical) (not .Report.Summary.Major)}}<span class="ok">bersih</span>{{end}}
+          {{else}}—{{end}}
+        </td>
+        <td class="num">{{dur .Duration}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+
+{{template "foot"}}

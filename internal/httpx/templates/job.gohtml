@@ -1,0 +1,27 @@
+{{template "head" (dict "Title" "Memproses")}}
+
+<section class="card" data-job="{{.Job.ID}}">
+  <h1>Memproses perbandingan</h1>
+  <p class="lede">{{.Job.PrevName}} → {{.Job.CurrName}}</p>
+
+  <ol class="steps" id="steps">
+    {{range .Job.Steps}}
+      <li class="step step-{{.Status}}" data-node="{{.Node}}">
+        <span class="mark"></span>
+        <span class="step-label">{{.Label}}</span>
+      </li>
+    {{end}}
+  </ol>
+
+  <p class="hint" id="status-line">Menunggu…</p>
+
+  <noscript>
+    <p class="hint">
+      Halaman ini memperbarui diri lewat JavaScript.
+      <a href="/jobs/{{.Job.ID}}/report">Buka laporan</a> setelah proses selesai.
+    </p>
+  </noscript>
+</section>
+
+<script src="/static/sse.js"></script>
+{{template "foot"}}
