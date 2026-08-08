@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/milhamsuryapratama/diff-checker/internal/docmodel"
 	"github.com/milhamsuryapratama/diff-checker/internal/ingest"
@@ -70,7 +71,7 @@ func runCompare(args []string) int {
 	asJSON := fs.Bool("json", false, "keluarkan laporan sebagai JSON")
 	showChanges := fs.Bool("changes", false, "tampilkan daftar perubahan teks")
 	failOnMajor := fs.Bool("fail-on-major", false, "keluar dengan status bukan nol jika ada temuan mayor")
-	_ = fs.Parse(args)
+	_ = fs.Parse(reorderArgs(fs, args))
 
 	if fs.NArg() != 2 {
 		fmt.Fprintln(os.Stderr, "compare membutuhkan tepat dua berkas")
@@ -117,7 +118,7 @@ func runInspect(args []string) int {
 	fs := flag.NewFlagSet("inspect", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "keluarkan struktur sebagai JSON")
 	showRefs := fs.Bool("refs", false, "tampilkan seluruh referensi silang")
-	_ = fs.Parse(args)
+	_ = fs.Parse(reorderArgs(fs, args))
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "inspect membutuhkan tepat satu berkas")
@@ -180,6 +181,50 @@ func printTree(n *docmodel.Node, depth int) {
 	for _, c := range n.Children {
 		printTree(c, depth+1)
 	}
+}
+
+// reorderArgs moves every flag — and its value, if it takes one — ahead of the
+// positional arguments, so a flag can be written anywhere on the command line:
+// "compare a.docx b.docx --json" works exactly like "compare --json a.docx
+// b.docx". Without this, Go's flag package stops parsing at the first
+// non-flag argument and treats everything after it, flags included, as
+// positional — which reads as a confusing "membutuhkan tepat dua berkas" error
+// when a flag was simply placed after the filenames.
+//
+// fs must already have every flag registered (via fs.Bool, fs.String, ...)
+// before this is called, so boolean flags — which take no following value —
+// can be told apart from ones that do.
+func reorderArgs(fs *flag.FlagSet, args []string) []string {
+	var flags, positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if len(a) < 2 || a[0] != '-' {
+			positional = append(positional, a)
+			continue
+		}
+		flags = append(flags, a)
+
+		name := strings.TrimLeft(a, "-")
+		if strings.ContainsRune(name, '=') {
+			continue // value is embedded ("--json=true"); nothing more to consume
+		}
+		fl := fs.Lookup(name)
+		if fl == nil {
+			continue // unknown flag; let fs.Parse report it
+		}
+		if bf, ok := fl.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+			continue // boolean flags never take a following value
+		}
+		if i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return append(flags, positional...)
 }
 
 func load(path string) (*docmodel.IndexedDoc, error) {
