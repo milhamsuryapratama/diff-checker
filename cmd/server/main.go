@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic"
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic/models"
 	"github.com/milhamsuryapratama/diff-checker/internal/httpx"
@@ -25,6 +27,17 @@ import (
 )
 
 func main() {
+	// Loaded before any flag default or registry is resolved, since both read
+	// from the environment this populates. godotenv.Load never overrides a
+	// variable already set in the real environment, so a deployment's actual
+	// env (container config, CI secrets) always wins over a checked-in .env.
+	// A missing .env is not an error — it is optional; the deterministic
+	// engine needs no configuration at all.
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		slog.New(slog.NewTextHandler(os.Stderr, nil)).Error("gagal membaca .env", "err", err)
+		os.Exit(1)
+	}
+
 	addr := flag.String("addr", envOr("ADDR", ":8080"), "alamat listen HTTP")
 	uploadDir := flag.String("uploads", envOr("UPLOAD_DIR", ""), "direktori unggahan (default: sementara)")
 	concurrency := flag.Int("concurrency", envInt("WORKER_CONCURRENCY", 2),

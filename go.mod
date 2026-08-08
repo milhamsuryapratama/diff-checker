@@ -3,6 +3,7 @@ module github.com/milhamsuryapratama/diff-checker
 go 1.24.7
 
 require (
+	github.com/joho/godotenv v1.5.1
 	github.com/sergi/go-diff v1.4.0
 	trpc.group/trpc-go/trpc-agent-go v1.11.0
 	trpc.group/trpc-go/trpc-agent-go/model/anthropic v1.11.0

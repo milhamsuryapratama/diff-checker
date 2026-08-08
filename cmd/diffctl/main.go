@@ -21,6 +21,8 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/joho/godotenv"
+
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic"
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic/models"
 	"github.com/milhamsuryapratama/diff-checker/internal/docmodel"
@@ -30,6 +32,14 @@ import (
 )
 
 func main() {
+	// --ai reads ANTHROPIC_API_KEY / DIFF_* the same way the server does; load
+	// .env before anything else so both entry points behave identically. A
+	// missing .env is not an error — it is optional.
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, "gagal membaca .env:", err)
+		os.Exit(3)
+	}
+
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
