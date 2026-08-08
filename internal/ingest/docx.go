@@ -81,6 +81,57 @@ type paraState struct {
 	hasNum  bool
 	active  bool
 	inTable bool
+
+	// table, row and col record where in a table the paragraph sits, all
+	// 1-based; zero outside a table.
+	table, row, col int
+}
+
+// tableCursor tracks nested table position while walking the document.
+//
+// Word nests tables freely — a schedule inside a cell inside another schedule —
+// so the state is a stack. The innermost frame is what a reviewer needs, since
+// that is the cell the text is actually in. Tables are numbered in document
+// order across the whole body, which is how a reader counts them.
+type tableCursor struct {
+	frames []tableFrame
+	seen   int // tables opened so far, for document-order numbering
+}
+
+type tableFrame struct{ table, row, col int }
+
+func (c *tableCursor) openTable() {
+	c.seen++
+	c.frames = append(c.frames, tableFrame{table: c.seen})
+}
+
+func (c *tableCursor) closeTable() {
+	if len(c.frames) > 0 {
+		c.frames = c.frames[:len(c.frames)-1]
+	}
+}
+
+func (c *tableCursor) openRow() {
+	if n := len(c.frames); n > 0 {
+		c.frames[n-1].row++
+		c.frames[n-1].col = 0
+	}
+}
+
+func (c *tableCursor) openCell() {
+	if n := len(c.frames); n > 0 {
+		c.frames[n-1].col++
+	}
+}
+
+func (c *tableCursor) depth() int { return len(c.frames) }
+
+// current returns the innermost cell position, or zeroes outside any table.
+func (c *tableCursor) current() tableFrame {
+	if n := len(c.frames); n > 0 {
+		return c.frames[n-1]
+	}
+	return tableFrame{}
 }
 
 func extractParagraphs(r io.Reader) ([]docmodel.Paragraph, error) {
@@ -90,11 +141,11 @@ func extractParagraphs(r io.Reader) ([]docmodel.Paragraph, error) {
 	dec.Strict = false
 
 	var (
-		out      []docmodel.Paragraph
-		cur      paraState
-		tblDepth int
-		skip     int  // >0 while inside a subtree whose text must be ignored
-		inText   bool // inside w:t (or w:delText when not skipped)
+		out    []docmodel.Paragraph
+		cur    paraState
+		tbl    tableCursor
+		skip   int  // >0 while inside a subtree whose text must be ignored
+		inText bool // inside w:t (or w:delText when not skipped)
 	)
 
 	emit := func() {
@@ -105,6 +156,10 @@ func extractParagraphs(r io.Reader) ([]docmodel.Paragraph, error) {
 			Text:    Normalize(raw),
 			Style:   cur.style,
 			InTable: cur.inTable,
+
+			Table:    cur.table,
+			TableRow: cur.row,
+			TableCol: cur.col,
 		}
 		if cur.hasNum {
 			p.ListID = cur.numID
@@ -130,10 +185,19 @@ func extractParagraphs(r io.Reader) ([]docmodel.Paragraph, error) {
 			}
 			switch t.Name.Local {
 			case "tbl":
-				tblDepth++
+				tbl.openTable()
+			case "tr":
+				tbl.openRow()
+			case "tc":
+				tbl.openCell()
 			case "p":
 				if !cur.active {
-					cur = paraState{active: true, inTable: tblDepth > 0}
+					at := tbl.current()
+					cur = paraState{
+						active:  true,
+						inTable: tbl.depth() > 0,
+						table:   at.table, row: at.row, col: at.col,
+					}
 				}
 			case "del", "instrText", "deleted":
 				// w:del wraps deleted runs; w:instrText holds field codes such as
@@ -180,9 +244,7 @@ func extractParagraphs(r io.Reader) ([]docmodel.Paragraph, error) {
 			}
 			switch t.Name.Local {
 			case "tbl":
-				if tblDepth > 0 {
-					tblDepth--
-				}
+				tbl.closeTable()
 			case "t":
 				inText = false
 			case "del", "instrText", "deleted":

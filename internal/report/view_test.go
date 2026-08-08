@@ -85,8 +85,8 @@ func TestFindingAttachesByParagraph(t *testing.T) {
 	}
 	v := BuildView(r)
 
-	if len(v.Orphans) != 0 {
-		t.Fatalf("finding orphaned: %+v", v.Orphans)
+	if len(v.Warnings) != 0 {
+		t.Fatalf("finding not attached to its change: %+v", v.Warnings)
 	}
 	if len(v.Changes[0].Findings) != 1 || !v.Changes[0].HasActions() {
 		t.Errorf("finding or its action not attached: %+v", v.Changes[0])
@@ -107,7 +107,7 @@ func TestFindingAttachesByArticleWhenIndexesShift(t *testing.T) {
 	v := BuildView(r)
 
 	if len(v.Changes[0].Findings) != 1 {
-		t.Errorf("finding in the same article was not attached: orphans=%d", len(v.Orphans))
+		t.Errorf("finding in the same article was not attached: warnings=%d", len(v.Warnings))
 	}
 }
 
@@ -125,7 +125,7 @@ func TestAmbiguousArticleLeavesFindingUnattached(t *testing.T) {
 	}
 	v := BuildView(r)
 
-	if len(v.Orphans) != 1 {
+	if len(v.Warnings) != 1 {
 		t.Errorf("ambiguous finding was attached anyway: %+v", v.Changes)
 	}
 }
@@ -137,12 +137,12 @@ func TestEveryFindingIsAccountedFor(t *testing.T) {
 		Findings: []docmodel.Finding{
 			{Category: docmodel.CatNumberingGap, ParaIndex: docmodel.IntPtr(5)},
 			{Category: docmodel.CatBrokenReference, ParaIndex: docmodel.IntPtr(900)},
-			{Category: docmodel.CatSectionRemoved},
+			{Category: docmodel.CatNumberingDuplicate},
 		},
 	}
 	v := BuildView(r)
 
-	total := len(v.Orphans)
+	total := len(v.Warnings)
 	for _, c := range v.Changes {
 		total += len(c.Findings)
 	}
@@ -170,7 +170,7 @@ func TestArticleOf(t *testing.T) {
 
 func TestBuildViewHandlesNilReport(t *testing.T) {
 	v := BuildView(nil)
-	if len(v.Changes) != 0 || len(v.Orphans) != 0 {
+	if len(v.Changes) != 0 || len(v.Warnings) != 0 {
 		t.Error("nil report should produce an empty view")
 	}
 }
@@ -182,5 +182,27 @@ func TestSnippetIsShortAndSingleLine(t *testing.T) {
 	}
 	if len([]rune(got)) > 50 {
 		t.Errorf("snippet too long (%d runes): %q", len([]rune(got)), got)
+	}
+}
+
+// Broken references are reported, never fixed: choosing between deleting the
+// sentence and repointing it needs intent the document does not carry.
+func TestBrokenReferenceIsWarningWithoutAction(t *testing.T) {
+	r := &docmodel.Report{
+		Changes: []docmodel.Change{{ID: 1, CurrIndexes: []int{5}}},
+		Findings: []docmodel.Finding{{
+			Category:  docmodel.CatBrokenReference,
+			ParaIndex: docmodel.IntPtr(5),
+		}},
+	}
+	v := BuildView(r)
+
+	if len(v.Warnings) != 1 {
+		t.Fatalf("broken reference should be a warning, got %d", len(v.Warnings))
+	}
+	for _, c := range v.Changes {
+		if c.HasActions() {
+			t.Error("broken reference must not carry a proposed fix")
+		}
 	}
 }

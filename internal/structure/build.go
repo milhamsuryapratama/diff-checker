@@ -37,6 +37,11 @@ func Build(doc *docmodel.IndexedDoc) {
 	// heading, so reference extraction does not read it as a self-reference.
 	headingPrefix := make([]int, len(doc.Paragraphs))
 
+	// Heading vocabulary this document uses beyond the ones we ship patterns
+	// for. Empty for Indonesian and English drafting, which the fixed patterns
+	// already cover.
+	learned := discoverHeadings(doc)
+
 	stack := []*docmodel.Node{root}
 	top := func() *docmodel.Node { return stack[len(stack)-1] }
 
@@ -77,7 +82,13 @@ func Build(doc *docmodel.IndexedDoc) {
 			continue
 		}
 
-		if h, ok := ParseHeading(p.Text); ok {
+		h, ok := ParseHeading(p.Text)
+		if !ok {
+			// Fall back to vocabulary learned from this document, so a heading
+			// word the fixed patterns have never seen still builds structure.
+			h, ok = learned.parse(p.Text)
+		}
+		if ok {
 			headingPrefix[i] = h.PrefixLen
 			attach(&docmodel.Node{
 				Kind:      h.Kind,

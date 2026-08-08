@@ -99,8 +99,16 @@ bawah, dan SEVERITY-nya dari rubrik di bawah.
 
 Penting:
 - Temuan penomoran dan rujukan silang SUDAH diperiksa secara deterministik oleh
-  mesin dan diberikan kepadamu sebagai fakta. Jangan mengulang, mengoreksi,
-  atau membantahnya. Fokuslah pada MAKNA perubahan teks.
+  mesin dan diberikan kepadamu sebagai fakta, LENGKAP dengan rencana penomoran
+  untuk seluruh dokumen. Jangan mengulang, mengoreksi, atau membantahnya, dan
+  JANGAN mengusulkan nomor baru sendiri: aritmetika penomoran dikerjakan mesin
+  supaya seluruh usulan konsisten satu sama lain. Fokuslah pada MAKNA perubahan.
+- Kalau sebuah perubahan hanya menggeser nomor tanpa mengubah isi, katakan
+  demikian secara singkat dan beri severity rendah. Jangan mengarang dampak
+  hukum yang tidak ada.
+- Kalau perubahan berada di dalam TABEL, sebutkan posisinya (tabel, baris,
+  kolom) dalam ringkasanmu — nomor paragraf saja tidak cukup untuk menemukannya
+  kembali di dokumen aslinya.
 - Isi confidence secara jujur: 1.0 hanya kalau kamu sudah membaca konteksnya
   lewat tool. Turunkan kalau kamu menilai dari potongan teks saja.
 - Jawab dalam JSON sesuai skema, satu entri per change_id yang diberikan.`
@@ -130,6 +138,14 @@ Aturan yang mengikat:
    mesin — itu sudah ditampilkan terpisah dan sudah punya usulan sendiri.
 4. Satu rekomendasi per risiko nyata. Jangan menambah rekomendasi hanya supaya
    daftarnya terlihat panjang. Nol rekomendasi adalah jawaban yang sah.
+5. JANGAN mengusulkan nomor pasal/ayat baru. Penomoran sudah direncanakan mesin
+   untuk seluruh dokumen sekaligus; usulan nomor buatanmu akan bertabrakan
+   dengan rencana itu dan membuat hasil akhirnya justru tidak urut.
+6. Untuk rujukan silang yang rusak: cukup JELASKAN dampaknya. Jangan mengusulkan
+   perbaikan teks — memilih antara menghapus kalimatnya atau mengarahkan ulang
+   rujukannya bergantung pada maksud penyusun, yang tidak tertulis di dokumen.
+7. Kalau perubahan berada di dalam tabel, sebutkan tabel, baris, dan kolomnya
+   pada rekomendasimu.
 
 ` + SeverityRubric + `
 
@@ -152,6 +168,8 @@ khususnya:
   ada sebelumnya?
 - Apakah severity-nya sesuai rubrik, atau dilebih-lebihkan?
 - Apakah kutipan teksnya cocok dengan isi paragraf yang diberikan?
+- Apakah temuan itu hanya mengulang fakta penomoran yang sudah diperiksa mesin?
+  Kalau ya, itu bukan temuan dan harus ditolak.
 
 ` + SeverityRubric + `
 

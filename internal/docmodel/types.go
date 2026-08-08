@@ -6,6 +6,8 @@
 // points at a paragraph by this index, so it stays stable across stages.
 package docmodel
 
+import "fmt"
+
 // Paragraph is one addressable unit of a document.
 //
 // A paragraph is produced for every w:p in a DOCX body, including paragraphs
@@ -33,6 +35,26 @@ type Paragraph struct {
 
 	// InTable marks paragraphs extracted from inside a w:tbl.
 	InTable bool `json:"in_table,omitempty"`
+
+	// Table locates a paragraph inside a table, all 1-based and zero when the
+	// paragraph is not in one.
+	//
+	// A reviewer told that "paragraph 213 changed" cannot find it in a document
+	// whose clause sits in the third row of a schedule; told that it is "tabel 2,
+	// baris 3, kolom 2" they can. Nested tables report the innermost cell, which
+	// is where the text actually is.
+	Table    int `json:"table,omitempty"`
+	TableRow int `json:"table_row,omitempty"`
+	TableCol int `json:"table_col,omitempty"`
+}
+
+// TableRef renders a paragraph's table position, empty when it is not inside a
+// table.
+func (p Paragraph) TableRef() string {
+	if p.Table == 0 {
+		return ""
+	}
+	return fmt.Sprintf("tabel %d baris %d kolom %d", p.Table, p.TableRow, p.TableCol)
 }
 
 // IsBlank reports whether the paragraph carries no comparable content.

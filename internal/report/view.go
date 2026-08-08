@@ -35,11 +35,35 @@ func (c ChangeView) HasActions() bool {
 type View struct {
 	Changes []ChangeView
 
-	// Orphans are findings that concern no specific text change: pre-existing
-	// numbering defects, references that were already dangling, sections
-	// removed wholesale. They are the majority on a messy document and must
-	// not be dropped just because they have no change to hang from.
-	Orphans []docmodel.Finding
+	// Renumbering is the document-wide numbering plan, one line per sequence.
+	// It answers the question no single change can: after every proposed edit,
+	// does the document actually run 1, 2, 3?
+	Renumbering []string
+
+	// PlanWarnings lists defects that survive applying the plan. Non-empty
+	// means the plan is not a complete fix and must not be presented as one.
+	PlanWarnings []string
+
+	// Warnings are findings that carry no action by design — a reference that
+	// was already dangling before this revision, a section removed wholesale.
+	// They are shown so nothing is hidden, but they are not asks.
+	Warnings []docmodel.Finding
+}
+
+// warningOnly reports whether a finding is informational by nature.
+//
+// Broken references are the clearest case: the engine can prove a citation no
+// longer resolves, but choosing between deleting the sentence and repointing it
+// is a drafting decision that depends on intent the document does not carry.
+// Proposing an edit there would be guessing, so it is reported and left alone.
+func warningOnly(f docmodel.Finding) bool {
+	switch f.Category {
+	case docmodel.CatBrokenReference, docmodel.CatShiftedReference,
+		docmodel.CatUnresolvedRelated, docmodel.CatSectionRemoved,
+		docmodel.CatSectionAdded, docmodel.CatSectionRenamed:
+		return true
+	}
+	return false
 }
 
 // BuildView groups findings under the changes they describe.
@@ -91,22 +115,34 @@ func BuildView(r *docmodel.Report) View {
 		views[i] = ChangeView{Change: c, Title: DescribeChange(c)}
 	}
 
+	v.Renumbering = r.Renumbering
+	v.PlanWarnings = r.RenumberingWarnings
+
 	for _, f := range r.Findings {
+		// A finding that proposes no fix and never could is a warning, not an
+		// item on a to-do list; keeping the two apart is what stops the report
+		// reading as a pile of unactionable noise.
+		if warningOnly(f) && len(f.Actions) == 0 {
+			v.Warnings = append(v.Warnings, f)
+			continue
+		}
 		if i, ok := matchChange(f, currIdx, prevIdx, nodeIdx); ok {
 			views[i].Findings = append(views[i].Findings, f)
 			continue
 		}
 		// Only attach by article when it is unambiguous. With several edits in
 		// one article there is no way to tell which one a finding belongs to,
-		// and guessing would put a fix under the wrong edit — worse than
-		// leaving it in the list below, where it is still visible.
+		// and filing a fix under the wrong edit is worse than filing it under
+		// the numbering plan, which covers the document as a whole.
 		if a := articleOf(f.NodeID); a != "" {
 			if hits := articleIdx[a]; len(hits) == 1 {
 				views[hits[0]].Findings = append(views[hits[0]].Findings, f)
 				continue
 			}
 		}
-		v.Orphans = append(v.Orphans, f)
+		// Everything left concerns the document's numbering as a whole rather
+		// than one edit, and the plan above is its fix.
+		v.Warnings = append(v.Warnings, f)
 	}
 
 	v.Changes = views

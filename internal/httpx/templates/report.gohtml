@@ -46,6 +46,7 @@
         <div class="change-meta">
           {{if $c.Cosmetic}}<span class="chip">kosmetik</span>{{end}}
           {{if $c.Context}}<span class="chip chip-loc">{{$c.Context}}</span>{{end}}
+          {{if $c.TableRef}}<span class="chip chip-loc">{{$c.TableRef}}</span>{{end}}
           {{range .Findings}}
             <span class="chip chip-sev {{severityClass .Severity}}">{{.Severity}}</span>
           {{end}}
@@ -101,15 +102,38 @@
 </section>
 {{end}}
 
-{{if $view.Orphans}}
+{{if $view.Renumbering}}
 <section class="card">
-  <h2>Temuan lain ({{len $view.Orphans}})</h2>
+  <h2>Rencana penomoran keseluruhan</h2>
   <p class="hint">
-    Temuan yang tidak terikat pada satu perubahan teks tertentu — misalnya cacat
-    penomoran yang sudah ada sebelumnya, atau bagian yang dihapus seluruhnya.
+    Satu rencana untuk seluruh dokumen, bukan perbaikan per temuan. Setiap baris
+    menunjukkan urutan sebelum dan sesudah seluruh usulan di atas diterapkan —
+    inilah cara memastikan hasil akhirnya benar-benar urut.
+  </p>
+  <ul class="plan">
+    {{range $view.Renumbering}}<li class="mono">{{.}}</li>{{end}}
+  </ul>
+  {{if $view.PlanWarnings}}
+    <p class="hint failed">Masih tersisa setelah rencana diterapkan:</p>
+    <ul class="plan">
+      {{range $view.PlanWarnings}}<li class="mono failed">{{.}}</li>{{end}}
+    </ul>
+  {{else}}
+    <p class="hint ok">Diverifikasi: setelah rencana ini diterapkan, seluruh urutan penomoran sudah benar.</p>
+  {{end}}
+</section>
+{{end}}
+
+{{if $view.Warnings}}
+<section class="card">
+  <h2>Peringatan ({{len $view.Warnings}})</h2>
+  <p class="hint">
+    Hal yang perlu diketahui tetapi tidak diberi usulan otomatis — misalnya
+    rujukan yang tidak lagi ditemukan, yang perbaikannya bergantung pada maksud
+    penyusun, bukan pada aturan.
   </p>
 
-  {{range $view.Orphans}}
+  {{range $view.Warnings}}
     <article class="finding {{severityClass .Severity}}">
       <header>
         <span class="sev">{{.Severity}}</span>
@@ -117,40 +141,19 @@
           {{if eq (printf "%s" .Class) "advisory"}}saran AI{{else}}terverifikasi{{end}}
         </span>
         <span class="cat">{{.Category}}</span>
-        {{if and (eq (printf "%s" .Class) "advisory") .Confidence}}
-          <span class="conf" title="keyakinan model">{{pct .Confidence}}</span>
-        {{end}}
       </header>
-
       <p class="msg">{{.Message}}</p>
-
       <p class="loc">
         {{if .ParaIndex}}<span>paragraf [{{.ParaIndex}}] ({{sideLabel .Side}})</span>{{end}}
         {{if .NodeID}}<span>{{.NodeID}}</span>{{end}}
       </p>
-
       {{range .Evidence}}<p class="evidence">{{.}}</p>{{end}}
-
-      {{range .Actions}}
-        <div class="action action-{{.Type}}">
-          <span class="action-type">usul: {{.Type}}</span>
-          {{if eq (printf "%s" .Type) "manual_review"}}
-            <span>{{.Rationale}}</span>
-          {{else}}
-            {{if .ParagraphIndex}}<span class="where">[{{.ParagraphIndex}}]</span>{{end}}
-            <span class="old">{{.Old}}</span>
-            <span class="arrow">→</span>
-            <span class="new">{{.New}}</span>
-            {{if .Rationale}}<span class="why">{{.Rationale}}</span>{{end}}
-          {{end}}
-        </div>
-      {{end}}
     </article>
   {{end}}
 </section>
 {{end}}
 
-{{if and (not $view.Changes) (not $view.Orphans)}}
+{{if and (not $view.Changes) (not $view.Warnings)}}
 <section class="card">
   <p class="ok-big">Tidak ada perubahan maupun temuan struktural.</p>
 </section>

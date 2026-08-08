@@ -403,6 +403,13 @@ func verifiedFactsBlock(rep *docmodel.Report) string {
 	fmt.Fprintf(&b, "- Perubahan teks: %d ditambah, %d dihapus, %d diubah\n",
 		rep.Summary.Added, rep.Summary.Removed, rep.Summary.Modified)
 
+	// The numbering plan is stated as settled arithmetic. Without it the model
+	// sees the individual defects and starts proposing its own numbers, which
+	// then contradict the plan the report actually applies.
+	for _, line := range rep.Renumbering {
+		fmt.Fprintf(&b, "- RENCANA PENOMORAN (sudah final, jangan diubah): %s\n", line)
+	}
+
 	n := 0
 	for _, f := range rep.Findings {
 		if f.Class != docmodel.ClassVerified {

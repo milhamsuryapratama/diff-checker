@@ -54,12 +54,18 @@ func checkGlobalSequence(doc *docmodel.IndexedDoc, kind docmodel.NodeKind, label
 	return checkSequence(collectKind(doc, kind), label, "")
 }
 
-// checkGlobalArticles validates Pasal and Article as one sequence, since a
-// bilingual document numbers them in parallel rather than continuing one another.
+// checkGlobalArticles validates each article-level vocabulary as its own
+// sequence.
+//
+// A document that repeats its clauses in several languages numbers each run
+// from 1 independently, so they must be checked independently. Grouping them by
+// node kind instead would read three correct 1,2,3 runs as one run of
+// 1,1,1,2,2,2,3,3,3 and report nine duplicates that are not there.
 func checkGlobalArticles(doc *docmodel.IndexedDoc) []docmodel.Finding {
 	var out []docmodel.Finding
-	out = append(out, checkSequence(collectKind(doc, docmodel.KindPasal), "Pasal", "")...)
-	out = append(out, checkSequence(collectKind(doc, docmodel.KindArticle), "Article", "")...)
+	for _, r := range articleRuns(doc) {
+		out = append(out, checkSequence(r.nodes, runLabel(r), "")...)
+	}
 	return out
 }
 

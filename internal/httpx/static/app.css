@@ -209,3 +209,6 @@ footer {
 
 .no-action { color: var(--muted); font-size: .82rem; margin: .5rem 0 0; font-style: italic; }
 .action .where { font-family: ui-monospace, monospace; color: var(--muted); font-size: .78rem; }
+
+.plan { margin: .4rem 0 .6rem; padding-left: 1.1rem; }
+.plan li { margin: .15rem 0; font-size: .85rem; }

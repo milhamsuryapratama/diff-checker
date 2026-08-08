@@ -46,9 +46,37 @@ func Build(prev, curr *docmodel.IndexedDoc) *docmodel.Report {
 
 	// Numbering is validated against the new document: that is the version being
 	// approved, and a defect there is what ships.
-	for _, f := range rules.ValidateNumbering(curr) {
+	numbering := rules.ValidateNumbering(curr)
+
+	// One document-wide renumbering plan replaces the per-finding repairs.
+	//
+	// Each numbering check can only see its own defect, and its local repair
+	// contradicted the others': on a real document numbered 2, 2, 4, 8, 6, 8
+	// the checks asked for 2→1, 8→5 and 6→9, which applied together still leave
+	// 1, 2, 4, 5, 9, 8 — gapped, duplicated and out of order. A plan computed
+	// across every sequence at once cannot disagree with itself.
+	plan := rules.PlanRenumbering(curr)
+	r.Renumbering = plan.Summary()
+	if unresolved := plan.Verify(curr); len(unresolved) > 0 {
+		// The plan is meant to be complete by construction. If anything
+		// survives applying it, say so rather than presenting a partial fix as
+		// a whole one.
+		r.RenumberingWarnings = unresolved
+	}
+	for i := range numbering {
+		attachPlanned(&numbering[i], plan)
+	}
+	for _, f := range numbering {
 		r.AddFinding(f)
 	}
+
+	// Parallel runs — the same clauses repeated in another language or script —
+	// have to stay in step with each other. Nothing here is language-specific:
+	// the runs are found by document shape.
+	for _, f := range rules.CheckParallelSequences(curr) {
+		r.AddFinding(f)
+	}
+
 	// Reference integrity is validated across the revision, so that a citation
 	// this edit broke is separated from one that was already dangling.
 	for _, f := range rules.CompareReferences(prev, curr) {
@@ -57,6 +85,20 @@ func Build(prev, curr *docmodel.IndexedDoc) *docmodel.Report {
 
 	docmodel.SortFindings(r.Findings)
 	return r
+}
+
+// attachPlanned swaps a numbering finding's locally-computed repair for the
+// document-wide one, so every displayed action belongs to a single consistent
+// plan. A finding whose paragraph the plan does not touch keeps no action at
+// all rather than an isolated guess.
+func attachPlanned(f *docmodel.Finding, plan *rules.Renumbering) {
+	f.Actions = nil
+	if f.ParaIndex == nil {
+		return
+	}
+	if act, ok := plan.ByParagraph[*f.ParaIndex]; ok {
+		f.Actions = []docmodel.Action{act}
+	}
 }
 
 // RenderText writes a human-readable report, used by the CLI.
