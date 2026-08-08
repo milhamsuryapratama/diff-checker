@@ -3,6 +3,7 @@ package agentic
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/graph"
@@ -15,6 +16,7 @@ import (
 	"github.com/milhamsuryapratama/diff-checker/internal/ingest"
 	"github.com/milhamsuryapratama/diff-checker/internal/report"
 	"github.com/milhamsuryapratama/diff-checker/internal/structure"
+	"github.com/milhamsuryapratama/diff-checker/internal/trace"
 )
 
 // Node IDs. Exported so the UI can render a progress checklist that matches the
@@ -65,11 +67,23 @@ func ingestNode(side docmodel.Side) graph.NodeFunc {
 			return nil, fmt.Errorf("jalur dokumen %s kosong", side)
 		}
 
+		node := NodeIngestCurr
+		if side == docmodel.SidePrev {
+			node = NodeIngestPrev
+		}
+		rec := trace.FromContext(ctx)
+
 		doc, err := ingest.Parse(path)
 		if err != nil {
 			return nil, fmt.Errorf("gagal membaca %s: %w", path, err)
 		}
+		rec.Note(node, trace.KindNote, fmt.Sprintf(
+			"Membaca %s: %d paragraf.", filepath.Base(path), len(doc.Paragraphs)))
+
 		structure.Build(doc)
+		rec.Note(node, trace.KindNote, fmt.Sprintf(
+			"Struktur terbaca: %d judul tingkat pasal, %d rujukan silang, bahasa terdeteksi %q.",
+			structure.ArticleCount(doc), len(doc.References), doc.Lang))
 
 		if side == docmodel.SidePrev {
 			return setPrevDoc(doc), nil
@@ -85,11 +99,38 @@ func ingestNode(side docmodel.Side) graph.NodeFunc {
 // runs before the LLM tier — and unconditionally, even when the AI tier is
 // disabled — because it is the part of the product that must always work.
 func deterministicNode(ctx context.Context, s graph.State) (any, error) {
-	prev, curr, err := Wrap(s).Docs()
+	st := Wrap(s)
+	prev, curr, err := st.Docs()
 	if err != nil {
 		return nil, err
 	}
-	return setReport(report.Build(prev, curr)), nil
+	rec := trace.FromContext(ctx)
+
+	rep := report.Build(prev, curr)
+
+	rec.Note(NodeDeterm, trace.KindNote, fmt.Sprintf(
+		"Membandingkan teks: %d ditambah, %d dihapus, %d diubah.",
+		rep.Summary.Added, rep.Summary.Removed, rep.Summary.Modified))
+	rec.Note(NodeDeterm, trace.KindNote, fmt.Sprintf(
+		"Memeriksa penomoran dan rujukan silang: %d temuan terverifikasi (%d kritis, %d mayor, %d minor).",
+		rep.Summary.Verified, rep.Summary.Critical, rep.Summary.Major, rep.Summary.Minor))
+
+	// The plan is the part a reviewer most needs to see reasoned out: it is
+	// what makes a pile of small renumber actions add up to an ordered
+	// document, and the only way to check that is to see the before and after.
+	for _, line := range rep.Renumbering {
+		rec.Note(NodeDeterm, trace.KindNote, "Merencanakan penomoran — "+line)
+	}
+	if len(rep.RenumberingWarnings) > 0 {
+		for _, w := range rep.RenumberingWarnings {
+			rec.Note(NodeDeterm, trace.KindNote, "Masih tersisa setelah rencana: "+w)
+		}
+	} else if len(rep.Renumbering) > 0 {
+		rec.Note(NodeDeterm, trace.KindNote,
+			"Verifikasi ulang: setelah rencana diterapkan, seluruh urutan sudah benar.")
+	}
+
+	return setReport(rep), nil
 }
 
 // triageNode is the cheap gate in front of the expensive tiers.
@@ -121,10 +162,15 @@ func (p *Pipeline) triageNode(ctx context.Context, s graph.State) (any, error) {
 		}), nil
 	}
 
+	trace.FromContext(ctx).Note(NodeTriage, trace.KindNote, fmt.Sprintf(
+		"Menyaring %d perubahan substantif untuk menentukan apakah analisis AI perlu dijalankan.",
+		len(substantive)))
+
 	c, err := p.caller(models.TierTriage, NodeTriage, st.Usage())
 	if err != nil {
 		return nil, err
 	}
+	c.rec, c.traceNode = trace.FromContext(ctx), NodeTriage
 
 	var out TriageVerdict
 	user := renderChangeList(substantive, 220)
@@ -176,10 +222,15 @@ func (p *Pipeline) analyzeNode(ctx context.Context, s graph.State) (any, error) 
 		return setAnalysis(&AnalysisResult{}), nil
 	}
 
+	trace.FromContext(ctx).Note(NodeAnalyze, trace.KindNote, fmt.Sprintf(
+		"Menganalisis %d perubahan. Konteks tambahan diambil lewat tool bila perlu.",
+		len(selected)))
+
 	c, err := p.caller(models.TierAnalyze, NodeAnalyze, st.Usage())
 	if err != nil {
 		return nil, err
 	}
+	c.rec, c.traceNode = trace.FromContext(ctx), NodeAnalyze
 
 	toolSet := tools.New(prev, curr)
 	user := strings.Join([]string{
@@ -222,10 +273,14 @@ func (p *Pipeline) recommendNode(ctx context.Context, s graph.State) (any, error
 		return setRecommendations(&RecommendationResult{}), nil
 	}
 
+	trace.FromContext(ctx).Note(NodeRecommend, trace.KindNote, fmt.Sprintf(
+		"Menilai risiko hukum untuk %d perubahan yang tidak kosmetik.", len(risky)))
+
 	c, err := p.caller(models.TierRecommend, NodeRecommend, st.Usage())
 	if err != nil {
 		return nil, err
 	}
+	c.rec, c.traceNode = trace.FromContext(ctx), NodeRecommend
 
 	base := strings.Join([]string{
 		verifiedFactsBlock(rep),
@@ -245,7 +300,14 @@ func (p *Pipeline) recommendNode(ctx context.Context, s graph.State) (any, error
 	// and asked once more. mining-legal-backend drops bad actions silently, so
 	// it makes the same mistake on every run.
 	res := ground.Actions(curr, actionsOf(out.Recommendations, curr))
+	if len(res.Rejections) > 0 {
+		trace.FromContext(ctx).Note(NodeRecommend, trace.KindNote, fmt.Sprintf(
+			"Validator grounding menolak %d usulan yang teksnya tidak ditemukan di dokumen.",
+			len(res.Rejections)))
+	}
 	if !res.OK() && len(res.Accepted) == 0 {
+		trace.FromContext(ctx).Note(NodeRecommend, trace.KindNote,
+			"Seluruh usulan ditolak; meminta model memperbaikinya sekali lagi dengan alasan penolakan.")
 		var retry RecommendationResult
 		retryUser := base + "\n\n" + res.Feedback()
 		if err := c.completeJSON(ctx, prompts.Recommend, retryUser, &retry,
@@ -294,7 +356,10 @@ func (p *Pipeline) assembleNode(ctx context.Context, s graph.State) (any, error)
 
 	// Every advisory finding passes the grounding validator before it lands in
 	// the report a user reads.
-	validated, _ := ground.Findings(curr, advisory)
+	validated, rejected := ground.Findings(curr, advisory)
+	trace.FromContext(ctx).Note(NodeAssemble, trace.KindNote, fmt.Sprintf(
+		"Menggabungkan %d temuan AI ke laporan (%d usulan ditolak validator).",
+		len(validated), len(rejected)))
 	for _, f := range validated {
 		rep.AddFinding(f)
 	}

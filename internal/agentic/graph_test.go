@@ -3,9 +3,11 @@ package agentic
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/milhamsuryapratama/diff-checker/internal/docmodel"
+	"github.com/milhamsuryapratama/diff-checker/internal/trace"
 )
 
 func fixture(t *testing.T, scenario, side string) string {
@@ -28,11 +30,13 @@ func TestGraphRunsEndToEndWithoutLLM(t *testing.T) {
 	opts.NoLLM = true
 
 	var progress []Progress
+	rec := trace.NewBuffer(nil)
 	res, err := p.Run(context.Background(),
 		fixture(t, "kitchen_sink", "prev"),
 		fixture(t, "kitchen_sink", "curr"),
 		opts,
 		func(pr Progress) { progress = append(progress, pr) },
+		rec,
 	)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -75,6 +79,30 @@ func TestGraphRunsEndToEndWithoutLLM(t *testing.T) {
 	if seen[NodeAnalyze] || seen[NodeRecommend] {
 		t.Error("LLM nodes executed despite NoLLM")
 	}
+
+	// The deterministic steps narrate their own work, so the reasoning panel is
+	// useful even when no model runs — that is the half of the record which is
+	// actually reproducible.
+	entries := rec.Entries()
+	if len(entries) == 0 {
+		t.Fatal("deterministic run recorded no reasoning")
+	}
+	var sawPlan bool
+	tracedNodes := map[string]bool{}
+	for _, e := range entries {
+		tracedNodes[e.Node] = true
+		if strings.Contains(e.Text, "Merencanakan penomoran") {
+			sawPlan = true
+		}
+	}
+	for _, node := range []string{NodeIngestPrev, NodeIngestCurr, NodeDeterm} {
+		if !tracedNodes[node] {
+			t.Errorf("node %q recorded nothing", node)
+		}
+	}
+	if !sawPlan {
+		t.Error("renumbering plan not explained in the trace")
+	}
 }
 
 // The graph must fail loudly on an unreadable document rather than reporting a
@@ -90,7 +118,7 @@ func TestGraphFailsOnMissingDocument(t *testing.T) {
 	_, err = p.Run(context.Background(),
 		fixture(t, "kitchen_sink", "prev"),
 		filepath.Join("..", "..", "testdata", "tidak-ada.docx"),
-		opts, nil)
+		opts, nil, nil)
 	if err == nil {
 		t.Fatal("expected an error for a missing document, got none")
 	}
@@ -108,7 +136,7 @@ func TestGraphOnTextOnlyFixture(t *testing.T) {
 	res, err := p.Run(context.Background(),
 		fixture(t, "text_only", "prev"),
 		fixture(t, "text_only", "curr"),
-		opts, nil)
+		opts, nil, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

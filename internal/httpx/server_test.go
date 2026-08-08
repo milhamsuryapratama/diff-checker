@@ -30,7 +30,10 @@ func newTestServer(t *testing.T) http.Handler {
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	store := jobs.NewStore()
+	store, err := jobs.NewStore(nil, log)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
 	worker := jobs.NewWorker(store, pipeline, 2, log)
 	worker.Start(context.Background())
 
@@ -161,23 +164,56 @@ func TestEventStreamDeliversTerminalSnapshot(t *testing.T) {
 		t.Fatalf("stream does not start with an SSE data frame: %q", truncate(body, 80))
 	}
 
-	var ev jobs.Event
-	payload := strings.TrimSuffix(strings.TrimPrefix(body, "data: "), "\n\n")
-	if err := json.Unmarshal([]byte(payload), &ev); err != nil {
-		t.Fatalf("decode event: %v", err)
+	// The stream is several frames now: a job snapshot, the recorded reasoning,
+	// then the terminal event.
+	events := parseSSE(t, body)
+	if len(events) == 0 {
+		t.Fatal("no events in stream")
 	}
-	if !ev.Done {
+
+	last := events[len(events)-1]
+	if !last.Done {
 		t.Error("terminal event not marked done; the browser would wait forever")
 	}
-	if ev.Job.Status != jobs.StatusDone {
-		t.Errorf("job status = %q, want done", ev.Job.Status)
+	if last.Job == nil || last.Job.Status != jobs.StatusDone {
+		t.Errorf("terminal event does not carry a finished job: %+v", last.Job)
 	}
 	// Nodes the conditional edge routed past must read as skipped, not stuck.
-	for _, s := range ev.Job.Steps {
+	for _, s := range last.Job.Steps {
 		if s.Node == agentic.NodeAnalyze && s.Status != "skipped" {
 			t.Errorf("analyze step = %q, want skipped", s.Status)
 		}
 	}
+
+	// The deterministic steps narrate themselves, so the record is useful even
+	// with the AI tier switched off.
+	var traced int
+	for _, ev := range events {
+		if ev.Type == "trace" && ev.Trace != nil {
+			traced++
+		}
+	}
+	if traced == 0 {
+		t.Error("stream carried no reasoning entries")
+	}
+}
+
+// parseSSE splits a recorded stream into its events.
+func parseSSE(t *testing.T, body string) []jobs.Event {
+	t.Helper()
+	var out []jobs.Event
+	for _, frame := range strings.Split(body, "\n\n") {
+		frame = strings.TrimSpace(frame)
+		if !strings.HasPrefix(frame, "data: ") {
+			continue
+		}
+		var ev jobs.Event
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &ev); err != nil {
+			t.Fatalf("decode event %q: %v", truncate(frame, 120), err)
+		}
+		out = append(out, ev)
+	}
+	return out
 }
 
 func TestRejectsUnsupportedFormat(t *testing.T) {

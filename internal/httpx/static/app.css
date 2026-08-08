@@ -212,3 +212,34 @@ footer {
 
 .plan { margin: .4rem 0 .6rem; padding-left: 1.1rem; }
 .plan li { margin: .15rem 0; font-size: .85rem; }
+
+/* --- agent reasoning: collapsible per step, live while it runs ------------ */
+
+.step-row { display: flex; align-items: center; gap: .7rem; }
+.trace-toggle {
+  background: transparent; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 999px; padding: 0 .55rem; font-size: .7rem; font-weight: 600;
+  cursor: pointer;
+}
+.trace-toggle:hover { color: var(--accent); border-color: var(--accent); }
+
+.trace {
+  margin: .4rem 0 .2rem 1.7rem; padding: .5rem .7rem;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  max-height: 16rem; overflow-y: auto;
+  font-size: .8rem; line-height: 1.5;
+}
+.trace-line {
+  margin: .2rem 0; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: ui-monospace, monospace;
+}
+.trace-note { color: var(--ink); }
+.trace-thought { color: var(--muted); font-style: italic; }
+.trace-tool_call { color: var(--verified); }
+.trace-tool_result { color: var(--muted); opacity: .8; }
+
+.trace-group { border: 1px solid var(--line); border-radius: 8px; margin-bottom: .6rem; }
+.trace-group summary {
+  cursor: pointer; padding: .55rem .8rem; font-weight: 600; font-size: .9rem;
+}
+.trace-group .trace { margin: 0 .8rem .8rem; max-height: 22rem; }

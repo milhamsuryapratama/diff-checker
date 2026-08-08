@@ -13,6 +13,7 @@ import (
 
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic/models"
 	"github.com/milhamsuryapratama/diff-checker/internal/docmodel"
+	"github.com/milhamsuryapratama/diff-checker/internal/trace"
 )
 
 // Pipeline builds and runs the comparison graph.
@@ -154,11 +155,17 @@ func (p *Pipeline) Run(
 	prevPath, currPath string,
 	opts Options,
 	onProgress func(Progress),
+	rec trace.Recorder,
 ) (*Result, error) {
 	exec, err := graph.NewExecutor(p.compiled)
 	if err != nil {
 		return nil, fmt.Errorf("gagal menyiapkan eksekutor: %w", err)
 	}
+
+	// The recorder rides in the context, not in graph state: state values are
+	// reflected over by the executor to build progress events, which races with
+	// a node writing reasoning. See internal/trace for the detail.
+	ctx = trace.NewContext(ctx, rec)
 
 	initial, sink := Initial(prevPath, currPath, opts)
 

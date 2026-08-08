@@ -8,12 +8,16 @@
 package jobs
 
 import (
+	"database/sql"
 	"errors"
+	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic"
 	"github.com/milhamsuryapratama/diff-checker/internal/docmodel"
+	"github.com/milhamsuryapratama/diff-checker/internal/trace"
 )
 
 // ErrNotFound is returned for an unknown job ID.
@@ -83,11 +87,68 @@ type Store struct {
 	mu   sync.RWMutex
 	jobs map[string]*Job
 	subs map[string][]chan Event
+
+	// traces holds the live recorder for jobs currently running, so a browser
+	// that connects mid-run streams from memory rather than polling the table.
+	traces map[string]*trace.Buffer
+
+	db  *sql.DB
+	log *slog.Logger
 }
 
-// NewStore creates an empty store.
-func NewStore() *Store {
-	return &Store{jobs: map[string]*Job{}, subs: map[string][]chan Event{}}
+// NewStore creates a store backed by db. A nil db keeps everything in memory,
+// which is what tests and the CLI want.
+func NewStore(db *sql.DB, log *slog.Logger) (*Store, error) {
+	s := &Store{
+		jobs:   map[string]*Job{},
+		subs:   map[string][]chan Event{},
+		traces: map[string]*trace.Buffer{},
+		db:     db,
+		log:    log,
+	}
+	if err := s.restore(); err != nil {
+		return nil, fmt.Errorf("memulihkan job tersimpan: %w", err)
+	}
+	return s, nil
+}
+
+// Recorder returns the trace sink for a job, creating it on first use.
+//
+// Every entry is persisted as it is produced and published to subscribers, so
+// reasoning survives a restart and reaches a watching browser in the same call.
+func (s *Store) Recorder(jobID string) *trace.Buffer {
+	s.mu.Lock()
+	if b, ok := s.traces[jobID]; ok {
+		s.mu.Unlock()
+		return b
+	}
+	s.mu.Unlock()
+
+	b := trace.NewBuffer(func(e trace.Entry) {
+		s.AppendTrace(jobID, e)
+		s.publishTrace(jobID, e)
+	})
+
+	s.mu.Lock()
+	s.traces[jobID] = b
+	s.mu.Unlock()
+	return b
+}
+
+// Trace returns a job's recorded reasoning, from memory when the job is live
+// and from the database otherwise.
+func (s *Store) Trace(jobID string) []trace.Entry {
+	s.mu.RLock()
+	b, live := s.traces[jobID]
+	s.mu.RUnlock()
+	if live {
+		return b.Entries()
+	}
+	entries, err := s.LoadTrace(jobID)
+	if err != nil && s.log != nil {
+		s.log.Error("gagal memuat jejak", "job", jobID, "err", err)
+	}
+	return entries
 }
 
 // Create registers a new job in the queued state with its checklist laid out.
@@ -106,6 +167,8 @@ func (s *Store) Create(id, prevName, currName, prevPath, currPath string, useAI 
 	s.mu.Lock()
 	s.jobs[id] = j
 	s.mu.Unlock()
+
+	s.persist(j)
 	return j
 }
 
@@ -184,11 +247,15 @@ func (s *Store) paths(id string) (prev, curr string, ok bool) {
 func (s *Store) update(id string, fn func(*Job)) {
 	s.mu.Lock()
 	j, ok := s.jobs[id]
+	var snapshot Job
 	if ok {
 		fn(j)
+		snapshot = *j
+		snapshot.Steps = append([]Step(nil), j.Steps...)
 	}
 	s.mu.Unlock()
 	if ok {
+		s.persist(&snapshot)
 		s.publish(id)
 	}
 }

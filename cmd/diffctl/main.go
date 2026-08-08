@@ -169,7 +169,9 @@ func runCompareAI(prevPath, currPath string, asJSON, showChanges, failOnMajor, s
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	res, err := pipeline.Run(ctx, prevPath, currPath, agentic.DefaultOptions(), onProgress)
+	// The CLI shows step completion, not reasoning; a terminal is the wrong
+	// place for a token stream competing with the report on stdout.
+	res, err := pipeline.Run(ctx, prevPath, currPath, agentic.DefaultOptions(), onProgress, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pipeline gagal:", err)
 		return 3

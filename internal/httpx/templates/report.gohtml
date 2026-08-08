@@ -159,6 +159,26 @@
 </section>
 {{end}}
 
+{{if .Trace}}
+<section class="card">
+  <h2>Proses berpikir</h2>
+  <p class="hint">
+    Catatan tiap langkah: apa yang dibaca mesin, apa yang direncanakannya, dan —
+    bila lapisan AI dijalankan — apa yang dipertimbangkan model sebelum menjawab.
+  </p>
+  {{range .Trace}}
+    <details class="trace-group">
+      <summary>{{.Label}} <span class="hint">({{len .Entries}} baris)</span></summary>
+      <div class="trace">
+        {{range .Entries}}
+          <div class="trace-line trace-{{.Kind}}">{{.Text}}</div>
+        {{end}}
+      </div>
+    </details>
+  {{end}}
+</section>
+{{end}}
+
 {{if $job.Usage}}
 <section class="card">
   <h2>Biaya token</h2>

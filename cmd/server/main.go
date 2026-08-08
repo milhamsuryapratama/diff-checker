@@ -39,7 +39,8 @@ func main() {
 	}
 
 	addr := flag.String("addr", envOr("ADDR", ":8080"), "alamat listen HTTP")
-	uploadDir := flag.String("uploads", envOr("UPLOAD_DIR", ""), "direktori unggahan (default: sementara)")
+	uploadDir := flag.String("uploads", envOr("UPLOAD_DIR", "data/uploads"), "direktori unggahan")
+	dbPath := flag.String("db", envOr("DB_PATH", "data/diff-checker.db"), "berkas basis data SQLite")
 	concurrency := flag.Int("concurrency", envInt("WORKER_CONCURRENCY", 2),
 		"jumlah perbandingan yang boleh berjalan bersamaan")
 	flag.Parse()
@@ -73,7 +74,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	store := jobs.NewStore()
+	db, err := jobs.Open(*dbPath)
+	if err != nil {
+		logger.Error("tidak dapat membuka basis data", "err", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	store, err := jobs.NewStore(db, logger)
+	if err != nil {
+		logger.Error("tidak dapat memuat job tersimpan", "err", err)
+		os.Exit(1)
+	}
 	worker := jobs.NewWorker(store, pipeline, *concurrency, logger)
 	worker.Start(ctx)
 
@@ -89,7 +101,8 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("server listening", "addr", *addr, "uploads", dir, "concurrency", *concurrency)
+		logger.Info("server listening",
+			"addr", *addr, "uploads", dir, "db", *dbPath, "concurrency", *concurrency)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -113,22 +126,19 @@ func main() {
 
 // resolveUploadDir returns the directory uploads are written to.
 //
-// A temporary directory is the default because uploaded legal documents are
-// confidential and the job store is in-memory: keeping the two lifetimes
-// identical means nothing outlives the process that could not also be served
-// by it.
+// Uploads now outlive the process, because job rows in the database reference
+// them: wiping them on shutdown would leave every restored job pointing at a
+// file that no longer exists. The directory is created 0700 — these are
+// confidential legal documents, and the reason they persist is that the
+// comparison they belong to does.
 func resolveUploadDir(configured string) (string, func(), error) {
-	if configured != "" {
-		if err := os.MkdirAll(configured, 0o700); err != nil {
-			return "", nil, err
-		}
-		return configured, func() {}, nil
+	if configured == "" {
+		configured = "data/uploads"
 	}
-	dir, err := os.MkdirTemp("", "diff-checker-*")
-	if err != nil {
+	if err := os.MkdirAll(configured, 0o700); err != nil {
 		return "", nil, err
 	}
-	return dir, func() { _ = os.RemoveAll(dir) }, nil
+	return configured, func() {}, nil
 }
 
 func envOr(key, fallback string) string {

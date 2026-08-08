@@ -20,9 +20,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/milhamsuryapratama/diff-checker/internal/agentic"
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic/models"
 	"github.com/milhamsuryapratama/diff-checker/internal/jobs"
 	"github.com/milhamsuryapratama/diff-checker/internal/report"
+	"github.com/milhamsuryapratama/diff-checker/internal/trace"
 )
 
 // maxUpload bounds a single uploaded document.
@@ -160,7 +162,10 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/jobs/"+job.ID+"/report", http.StatusSeeOther)
 		return
 	}
-	s.render(w, "job.gohtml", map[string]any{"Job": job})
+	s.render(w, "job.gohtml", map[string]any{
+		"Job":   job,
+		"Trace": s.store.Trace(job.ID),
+	})
 }
 
 // handleEvents streams job updates as server-sent events.
@@ -171,7 +176,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, ch, cancel, err := s.store.Subscribe(r.PathValue("id"))
+	job, backlog, ch, cancel, err := s.store.Subscribe(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "job tidak ditemukan", http.StatusNotFound)
 		return
@@ -200,8 +205,22 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// Send the current state first, so a browser that connects after the job
 	// finished still gets the result rather than waiting for an event that
 	// will never come.
+	if !send(jobs.Event{Type: "job", Job: job}) {
+		return
+	}
+	// Replay the reasoning recorded so far, so a browser that joins a run in
+	// progress — or reopens the page after a restart — sees the whole record
+	// rather than only what happens from now on.
+	for i := range backlog {
+		if !send(jobs.Event{Type: "trace", Trace: &backlog[i]}) {
+			return
+		}
+	}
 	done := job.Status == jobs.StatusDone || job.Status == jobs.StatusFailed
-	if !send(jobs.Event{Job: job, Done: done}) || done {
+	if done {
+		if !send(jobs.Event{Type: "job", Job: job, Done: true}) {
+			return
+		}
 		return
 	}
 
@@ -244,6 +263,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"Job":    job,
 		"Report": job.Report,
 		"View":   report.BuildView(job.Report),
+		"Trace":  groupTrace(s.store.Trace(job.ID)),
 	})
 }
 
@@ -266,6 +286,29 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(job.Report)
+}
+
+// NodeTrace is one step's recorded reasoning, for the collapsible panel.
+type NodeTrace struct {
+	Node    string
+	Label   string
+	Entries []trace.Entry
+}
+
+// groupTrace arranges entries by pipeline step, in pipeline order, so the
+// finished report shows the same structure the live progress page did.
+func groupTrace(entries []trace.Entry) []NodeTrace {
+	byNode := map[string][]trace.Entry{}
+	for _, e := range entries {
+		byNode[e.Node] = append(byNode[e.Node], e)
+	}
+	var out []NodeTrace
+	for _, node := range agentic.OrderedNodes {
+		if es := byNode[node]; len(es) > 0 {
+			out = append(out, NodeTrace{Node: node, Label: agentic.NodeLabels[node], Entries: es})
+		}
+	}
+	return out
 }
 
 func (s *Server) fail(w http.ResponseWriter, code int, msg string, err error) {

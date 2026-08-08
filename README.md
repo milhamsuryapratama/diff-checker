@@ -47,6 +47,8 @@ Mesin deterministik, lapisan agentic, dan UI web sudah berjalan.
 | Lapisan agentic (trpc-agent-go) | ✅ |
 | Grounding validator | ✅ |
 | UI web + job queue + SSE | ✅ |
+| Catatan proses berpikir agent (live + tersimpan) | ✅ |
+| Penyimpanan SQLite (tahan restart) | ✅ |
 | Golden-set eval harness | ⬜ |
 | Auto-fix DOCX | ⬜ |
 
@@ -105,6 +107,17 @@ make run    # http://localhost:8080
 Unggah dua dokumen, lihat checklist progres terisi lewat SSE, baca laporannya.
 Tanpa API key, opsi analisis AI otomatis dinonaktifkan dan pemeriksaan
 deterministik tetap berjalan penuh.
+
+Setiap langkah mencatat **proses berpikirnya** — apa yang dibaca parser, urutan
+penomoran apa yang direncanakan, dan (bila lapisan AI aktif) penalaran model
+beserta tool yang dipanggilnya. Catatan itu tampil live sewaktu langkahnya
+berjalan, bisa dilipat, dan ikut tersimpan sehingga tetap ada setelah halaman
+ditutup atau server dimulai ulang.
+
+Seluruh data disimpan di SQLite (`data/diff-checker.db` secara default), jadi
+job, laporan, dan catatannya tidak hilang saat server restart. Job yang sedang
+berjalan ketika server berhenti ditandai gagal — status pipeline-nya ada di
+memori eksekutor, bukan di basis data, jadi tidak bisa dilanjutkan.
 
 | Route | Isi |
 |---|---|
@@ -188,7 +201,8 @@ internal/
   report/      perakitan laporan + renderer teks
   agentic/     graph LLM: state, node, prompt, tool, registry model
   ground/      validator grounding — aksi karangan model ditolak di sini
-  jobs/        job store, worker pool, hub event SSE
+  trace/       catatan langkah: nota deterministik, penalaran model, panggilan tool
+  jobs/        job store (SQLite), worker pool, hub event SSE
   httpx/       handler HTTP + template + aset (embed)
 cmd/
   diffctl/     CLI

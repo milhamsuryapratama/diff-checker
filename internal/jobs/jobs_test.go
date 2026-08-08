@@ -18,7 +18,10 @@ func newTestWorker(t *testing.T) (*Store, *Worker) {
 	if err != nil {
 		t.Fatalf("agentic.New: %v", err)
 	}
-	store := NewStore()
+	store, err := NewStore(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
 	w := NewWorker(store, pipeline, 2, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	w.Start(context.Background())
 	return store, w
@@ -97,14 +100,14 @@ func TestSubscribeReceivesTerminalEvent(t *testing.T) {
 
 	store.Create("j2", "a", "b", fixture("text_only", "prev"), fixture("text_only", "curr"), false)
 
-	_, ch, cancel, err := store.Subscribe("j2")
+	_, _, ch, cancel, err := store.Subscribe("j2")
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
 	defer cancel()
 
 	// A second subscriber that never reads: publish must not block on it.
-	_, _, cancelIdle, _ := store.Subscribe("j2")
+	_, _, _, cancelIdle, _ := store.Subscribe("j2")
 	defer cancelIdle()
 
 	if err := w.Enqueue("j2"); err != nil {
@@ -128,10 +131,10 @@ func TestSubscribeReceivesTerminalEvent(t *testing.T) {
 }
 
 func TestUnsubscribeStopsDelivery(t *testing.T) {
-	store := NewStore()
+	store := mustStore(t)
 	store.Create("j3", "a", "b", "p", "c", false)
 
-	_, ch, cancel, err := store.Subscribe("j3")
+	_, _, ch, cancel, err := store.Subscribe("j3")
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
@@ -225,4 +228,13 @@ func TestStepsMarkPaidNodesSkippedWithoutAI(t *testing.T) {
 			t.Errorf("with AI on, node %q = %q, want pending", s.Node, s.Status)
 		}
 	}
+}
+
+func mustStore(t *testing.T) *Store {
+	t.Helper()
+	s, err := NewStore(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	return s
 }

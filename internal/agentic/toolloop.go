@@ -4,10 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/tool"
+
+	"github.com/milhamsuryapratama/diff-checker/internal/trace"
 )
+
+// clipArgs renders tool arguments compactly for the trace.
+func clipArgs(raw []byte) string { return clip(string(raw), 160) }
+
+func clip(s string, n int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
 
 // maxToolRounds bounds how many times the model may go back for more context
 // before it must answer.
@@ -63,7 +78,14 @@ func (c caller) completeJSONWithTools(
 
 		messages = append(messages, msg)
 		for _, call := range msg.ToolCalls {
-			messages = append(messages, c.runTool(ctx, toolset, call))
+			// A tool call is the most legible form of model reasoning there is:
+			// it shows exactly what the model went looking for before deciding.
+			c.recorder().Note(c.traceNode, trace.KindToolCall,
+				fmt.Sprintf("%s(%s)", call.Function.Name, clipArgs(call.Function.Arguments)))
+
+			reply := c.runTool(ctx, toolset, call)
+			c.recorder().Note(c.traceNode, trace.KindToolResult, clip(reply.Content, 400))
+			messages = append(messages, reply)
 		}
 	}
 

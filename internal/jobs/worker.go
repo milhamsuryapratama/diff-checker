@@ -102,7 +102,7 @@ func (w *Worker) run(ctx context.Context, id string) {
 		w.store.update(id, func(j *Job) { applyProgress(j, p) })
 	}
 
-	res, err := w.pipeline.Run(ctx, prevPath, currPath, opts, onProgress)
+	res, err := w.pipeline.Run(ctx, prevPath, currPath, opts, onProgress, w.store.Recorder(id))
 	if err != nil {
 		w.log.Error("job gagal", "job", id, "err", err)
 		w.store.update(id, func(j *Job) {

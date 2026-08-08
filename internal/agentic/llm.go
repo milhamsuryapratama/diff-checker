@@ -11,6 +11,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/model"
 
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic/models"
+	"github.com/milhamsuryapratama/diff-checker/internal/trace"
 )
 
 // callTimeout bounds a single model call.
@@ -25,11 +26,27 @@ const callTimeout = 120 * time.Second
 // common case, so a small budget with backoff recovers most of them.
 const maxAttempts = 3
 
-// caller wraps a tier's model with retry, usage accounting, and JSON decoding.
+// caller wraps a tier's model with retry, usage accounting, JSON decoding and
+// reasoning capture.
 type caller struct {
 	entry models.Entry
 	node  string
 	usage *Usage
+
+	// rec receives the model's reasoning as it streams, so the UI can show the
+	// same token-by-token thinking a chat client does. traceNode names the
+	// pipeline step the lines belong to. Both may be zero: the CLI has nowhere
+	// to display them.
+	rec       trace.Recorder
+	traceNode string
+}
+
+// recorder returns the trace sink, never nil.
+func (c caller) recorder() trace.Recorder {
+	if c.rec != nil {
+		return c.rec
+	}
+	return trace.Nop{}
 }
 
 // completion is one model reply plus what it cost.
@@ -98,6 +115,7 @@ func (c caller) attempt(ctx context.Context, req *model.Request) (completion, er
 			return completion{}, ctx.Err()
 		case rsp, ok := <-ch:
 			if !ok {
+				c.recorder().EndStream(c.traceNode)
 				if text.Len() == 0 {
 					return completion{}, fmt.Errorf("model tidak mengembalikan konten")
 				}
@@ -110,6 +128,13 @@ func (c caller) attempt(ctx context.Context, req *model.Request) (completion, er
 				return completion{}, fmt.Errorf("model error: %s", rsp.Error.Message)
 			}
 			for _, ch := range rsp.Choices {
+				// Extended thinking arrives on its own field, separate from the
+				// answer. Forwarding it as it streams is what makes the UI show
+				// reasoning live rather than a spinner; it is deliberately not
+				// mixed into text, which must stay parseable as JSON.
+				if ch.Delta.ReasoningContent != "" {
+					c.recorder().Stream(c.traceNode, trace.KindThought, ch.Delta.ReasoningContent)
+				}
 				// Streaming deltas and the final non-streamed message arrive on
 				// the same channel; taking both would duplicate the text.
 				if ch.Delta.Content != "" {

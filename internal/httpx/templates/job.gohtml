@@ -7,8 +7,14 @@
   <ol class="steps" id="steps">
     {{range .Job.Steps}}
       <li class="step step-{{.Status}}" data-node="{{.Node}}">
-        <span class="mark"></span>
-        <span class="step-label">{{.Label}}</span>
+        <div class="step-row">
+          <span class="mark"></span>
+          <span class="step-label">{{.Label}}</span>
+          <button type="button" class="trace-toggle" data-toggle="{{.Node}}" hidden>
+            proses berpikir
+          </button>
+        </div>
+        <div class="trace" data-trace="{{.Node}}" hidden></div>
       </li>
     {{end}}
   </ol>
