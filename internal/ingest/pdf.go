@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,7 +16,25 @@ import (
 )
 
 // ErrPDFToolMissing is returned when the pdftotext binary is not installed.
-var ErrPDFToolMissing = errors.New("pdftotext not found: install poppler-utils to enable PDF input")
+//
+// The message names the exact install command for the running OS rather than
+// a generic "install poppler-utils": a user hitting this in a browser upload
+// has no context for what poppler-utils even is, let alone how their package
+// manager spells it.
+var ErrPDFToolMissing = errors.New("pdftotext tidak ditemukan — " + installHint())
+
+func installHint() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "install dengan: brew install poppler"
+	case "linux":
+		return "install dengan: sudo apt install poppler-utils (Debian/Ubuntu) atau paket poppler-utils yang setara di distro Anda"
+	case "windows":
+		return "unduh poppler untuk Windows (https://github.com/oschwartz10612/poppler-windows) dan tambahkan bin/ ke PATH"
+	default:
+		return "install paket poppler-utils untuk sistem operasi Anda"
+	}
+}
 
 // pdfTimeout bounds extraction so a malformed file cannot wedge a worker.
 const pdfTimeout = 60 * time.Second

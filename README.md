@@ -50,6 +50,41 @@ Mesin deterministik, lapisan agentic, dan UI web sudah berjalan.
 | Golden-set eval harness | ⬜ |
 | Auto-fix DOCX | ⬜ |
 
+## Prasyarat
+
+Semuanya opsional kecuali Go — tanpa `poppler-utils`, ingest `.docx`/`.txt`/`.md`
+tetap berjalan penuh; hanya input `.pdf` yang butuh alat ini.
+
+| Alat | Untuk apa | Wajib? |
+|---|---|---|
+| Go 1.24+ | build & jalankan | ya |
+| `poppler-utils` (`pdftotext`) | membaca input `.pdf` | hanya jika perlu ingest PDF |
+| `libreoffice` (`soffice`) | `make fixtures` — generate ulang fixture uji | hanya untuk kontribusi ke `testdata/` |
+
+Kenapa `pdftotext`, bukan library Go murni: dokumen hukum sering multi-kolom
+dan bertabel, dan `pdftotext -layout` jauh lebih andal menjaga **urutan baca**
+dibanding library ekstraksi PDF pure-Go yang tersedia gratis — parser struktur
+Pasal/ayat/huruf bergantung pada urutan itu. Kalau tidak terpasang, `diffctl`
+memberi pesan error dengan command instalasi yang tepat untuk OS kamu.
+
+```bash
+# macOS
+brew install poppler
+
+# Debian / Ubuntu
+sudo apt install poppler-utils
+
+# Fedora / RHEL
+sudo dnf install poppler-utils
+
+# Windows
+# unduh dari https://github.com/oschwartz10612/poppler-windows
+# lalu tambahkan folder bin/ ke PATH
+```
+
+Docker (`Dockerfile` di repo ini) sudah meng-install `poppler-utils` secara
+otomatis — tidak perlu langkah tambahan untuk deploy via container.
+
 ## Menjalankan
 
 ```bash
@@ -138,7 +173,7 @@ Temuan (5 terverifikasi, 0 saran AI)
 | Format | Catatan |
 |---|---|
 | `.docx` | Paragraf termasuk isi tabel. Tracked changes diselesaikan ke tampilan *accepted*. |
-| `.pdf` | Butuh `pdftotext` (paket `poppler-utils`). PDF hasil scan ditolak dengan pesan jelas — OCR di luar cakupan v1. |
+| `.pdf` | Butuh `pdftotext`, lihat [Prasyarat](#prasyarat). PDF hasil scan ditolak dengan pesan jelas — OCR di luar cakupan v1. |
 | `.txt`, `.md` | Satu baris = satu paragraf. |
 
 ## Arsitektur
