@@ -55,9 +55,15 @@ func (c caller) completeJSONWithTools(
 		model.NewUserMessage(user),
 	}
 
+	budget := c.entry.MaxOutputTokens
+	if budget <= 0 {
+		budget = defaultMaxOutputTokens
+	}
+
 	for round := 0; round < maxToolRounds; round++ {
 		req := &model.Request{Messages: messages, Tools: toolset}
 		req.Stream = false
+		req.MaxTokens = &budget
 
 		rsp, err := c.completeRaw(ctx, req)
 		if err != nil {
@@ -143,14 +149,12 @@ func (c caller) finalJSON(
 	messages = append(messages, model.NewUserMessage(
 		"Sekarang keluarkan jawaban akhir dalam JSON."+contractFor(out)))
 
-	req := model.NewRequest(messages, model.WithStructuredOutputJSON(out, true, desc))
-	req.Stream = true
-
-	rsp, err := c.complete(ctx, req)
-	if err != nil {
-		return err
-	}
-	return decodeJSON(rsp.Text, out)
+	return c.completeStructured(ctx, out, func(maxTokens int) *model.Request {
+		req := model.NewRequest(messages, model.WithStructuredOutputJSON(out, true, desc))
+		req.Stream = true
+		req.MaxTokens = &maxTokens
+		return req
+	})
 }
 
 // completeRaw is the non-streaming sibling of complete, used by the tool loop

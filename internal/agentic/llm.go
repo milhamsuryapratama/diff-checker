@@ -20,7 +20,18 @@ import (
 // around the whole pipeline — which is why a single wedged request there takes
 // the entire job down with it and needs a janitor to clean up afterwards. A
 // per-call budget lets one slow request fail and be retried instead.
-const callTimeout = 120 * time.Second
+//
+// 180s rather than a tighter bound because a large MaxOutputTokens budget (see
+// models.Spec) is meant to be used when a reply genuinely needs it — Opus
+// writing several thousand tokens of legal-risk analysis with thinking on is
+// slower than a short classification call, and cutting it off at the transport
+// level would reproduce the exact truncation this file works around below.
+const callTimeout = 180 * time.Second
+
+// defaultMaxOutputTokens matches the Anthropic adapter's own fallback, so a
+// tier whose registry entry leaves MaxOutputTokens unset behaves exactly as it
+// did before that field existed.
+const defaultMaxOutputTokens = 4096
 
 // maxAttempts is the retry budget per call. Transient 429/5xx responses are the
 // common case, so a small budget with backoff recovers most of them.
@@ -53,6 +64,11 @@ func (c caller) recorder() trace.Recorder {
 type completion struct {
 	Text  string
 	Usage NodeUsage
+	// Truncated reports whether the provider stopped the reply because it hit
+	// the output-token budget (finish_reason "length"), as opposed to finishing
+	// on its own. This is what tells completeJSON apart an unfinished reply
+	// from one the model genuinely got wrong.
+	Truncated bool
 }
 
 // complete sends one request and collects the streamed reply into a single
@@ -107,6 +123,7 @@ func (c caller) attempt(ctx context.Context, req *model.Request) (completion, er
 
 	var text strings.Builder
 	var usage NodeUsage
+	var truncated bool
 	usage.Model = c.entry.Name
 
 	for {
@@ -119,7 +136,7 @@ func (c caller) attempt(ctx context.Context, req *model.Request) (completion, er
 				if text.Len() == 0 {
 					return completion{}, fmt.Errorf("model tidak mengembalikan konten")
 				}
-				return completion{Text: text.String(), Usage: usage}, nil
+				return completion{Text: text.String(), Usage: usage, Truncated: truncated}, nil
 			}
 			if rsp == nil {
 				continue
@@ -141,6 +158,13 @@ func (c caller) attempt(ctx context.Context, req *model.Request) (completion, er
 					text.WriteString(ch.Delta.Content)
 				} else if ch.Message.Content != "" && rsp.Done {
 					text.WriteString(ch.Message.Content)
+				}
+				// "length" means the provider cut the reply off at MaxTokens, not
+				// that the model chose to stop. A JSON body severed mid-string
+				// looks identical to genuinely malformed output to decodeJSON, so
+				// this is the only place that can tell the two apart.
+				if ch.FinishReason != nil && *ch.FinishReason == "length" {
+					truncated = true
 				}
 			}
 			if rsp.Usage != nil {
@@ -167,20 +191,54 @@ func (c caller) attempt(ctx context.Context, req *model.Request) (completion, er
 // appended to the user message because not every provider adapter forwards the
 // request-level schema — see jsonshape.go for what that silently cost.
 func (c caller) completeJSON(ctx context.Context, system, user string, out any, desc string) error {
-	req := model.NewRequest(
-		[]model.Message{
-			model.NewSystemMessage(system),
-			model.NewUserMessage(user + contractFor(out)),
-		},
-		model.WithStructuredOutputJSON(out, true, desc),
-	)
-	req.Stream = true
+	return c.completeStructured(ctx, out, func(maxTokens int) *model.Request {
+		req := model.NewRequest(
+			[]model.Message{
+				model.NewSystemMessage(system),
+				model.NewUserMessage(user + contractFor(out)),
+			},
+			model.WithStructuredOutputJSON(out, true, desc),
+		)
+		req.Stream = true
+		req.MaxTokens = &maxTokens
+		return req
+	})
+}
 
-	rsp, err := c.complete(ctx, req)
-	if err != nil {
-		return err
+// completeStructured runs a structured-output request and decodes the reply
+// into out, retrying once with a larger token budget if the first reply was
+// cut off by MaxTokens rather than malformed.
+//
+// build is called fresh on each attempt so the second call can carry a
+// different budget; it must not mutate out itself.
+func (c caller) completeStructured(ctx context.Context, out any, build func(maxTokens int) *model.Request) error {
+	budget := c.entry.MaxOutputTokens
+	if budget <= 0 {
+		budget = defaultMaxOutputTokens
 	}
-	return decodeJSON(rsp.Text, out)
+
+	for attempt := 1; ; attempt++ {
+		rsp, err := c.complete(ctx, build(budget))
+		if err != nil {
+			return err
+		}
+		err = decodeJSON(rsp.Text, out)
+		if err == nil {
+			return nil
+		}
+		if !rsp.Truncated || attempt >= 2 {
+			if rsp.Truncated {
+				return fmt.Errorf(
+					"balasan model terpotong oleh batas token keluaran (max_tokens=%d) dan tidak selesai walau sudah diulang dengan batas lebih besar: %w",
+					budget, err)
+			}
+			return err
+		}
+		// The reply was never malformed, just unfinished: retry once with more
+		// room rather than spending the node's whole retry budget on a request
+		// that was never going to parse.
+		budget *= 2
+	}
 }
 
 // decodeJSON parses a model reply into out.

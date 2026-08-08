@@ -73,6 +73,14 @@ type Spec struct {
 	BaseURL  string
 	APIKey   string
 	Rates    Rates
+
+	// MaxOutputTokens bounds a single reply. The Anthropic adapter falls back to
+	// 4096 when this is unset, which is tight enough that a tier writing several
+	// paragraphs of legal risk analysis per finding — recommend can cover up to
+	// MaxAdvisory changes in one JSON array — can be cut off mid-string before
+	// the object closes. Each tier gets a budget sized to what it actually
+	// writes, not the adapter's one-size-fits-all default.
+	MaxOutputTokens int
 }
 
 // Registry hands out built models per tier, memoising them so that a model —
@@ -84,9 +92,10 @@ type Registry struct {
 
 // Entry pairs a tier's model with the rates used to price its calls.
 type Entry struct {
-	Model model.Model
-	Rates Rates
-	Name  string
+	Model           model.Model
+	Rates           Rates
+	Name            string
+	MaxOutputTokens int
 }
 
 // anthropicDefaults reflect published list prices at the time of writing.
@@ -106,24 +115,30 @@ func anthropicRates(in, out float64) Rates {
 func DefaultSpecs() map[Tier]Spec {
 	return map[Tier]Spec{
 		TierTriage: {
-			Provider: ProviderAnthropic,
-			Model:    "claude-haiku-4-5-20251001",
-			Rates:    anthropicRates(1, 5),
+			Provider:        ProviderAnthropic,
+			Model:           "claude-haiku-4-5-20251001",
+			Rates:           anthropicRates(1, 5),
+			MaxOutputTokens: 2048,
 		},
 		TierAnalyze: {
-			Provider: ProviderAnthropic,
-			Model:    "claude-sonnet-5",
-			Rates:    anthropicRates(3, 15),
+			Provider:        ProviderAnthropic,
+			Model:           "claude-sonnet-5",
+			Rates:           anthropicRates(3, 15),
+			MaxOutputTokens: 8192,
 		},
 		TierRecommend: {
 			Provider: ProviderAnthropic,
 			Model:    "claude-opus-5",
 			Rates:    anthropicRates(5, 25),
+			// Sized for MaxAdvisory (25) findings, each carrying a paragraph of
+			// risk analysis plus a rationale for its recommended action.
+			MaxOutputTokens: 16384,
 		},
 		TierAdjudicate: {
-			Provider: ProviderAnthropic,
-			Model:    "claude-opus-5",
-			Rates:    anthropicRates(5, 25),
+			Provider:        ProviderAnthropic,
+			Model:           "claude-opus-5",
+			Rates:           anthropicRates(5, 25),
+			MaxOutputTokens: 8192,
 		},
 	}
 }
@@ -138,6 +153,7 @@ func DefaultSpecs() map[Tier]Spec {
 //	DIFF_BASE_URL_<T>         override endpoint (OpenAI-compatible gateways)
 //	DIFF_RATE_IN_<T>          USD per million input tokens
 //	DIFF_RATE_OUT_<T>         USD per million output tokens
+//	DIFF_MAX_TOKENS_<T>       output token budget for one reply
 //
 // and globally:
 //
@@ -178,6 +194,9 @@ func FromEnv() *Registry {
 		}
 		if v, ok := parseFloat(os.Getenv("DIFF_RATE_OUT_" + suffix)); ok {
 			spec.Rates.OutputPerMTok = v
+		}
+		if v, ok := parseInt(os.Getenv("DIFF_MAX_TOKENS_" + suffix)); ok {
+			spec.MaxOutputTokens = v
 		}
 
 		switch spec.Provider {
@@ -239,7 +258,7 @@ func (r *Registry) Get(tier Tier) (Entry, error) {
 		return Entry{}, fmt.Errorf("tier %q tidak dikenal", tier)
 	}
 	if m, ok := r.built[tier]; ok {
-		return Entry{Model: m, Rates: spec.Rates, Name: spec.Model}, nil
+		return Entry{Model: m, Rates: spec.Rates, Name: spec.Model, MaxOutputTokens: spec.MaxOutputTokens}, nil
 	}
 	if spec.APIKey == "" {
 		return Entry{}, fmt.Errorf("tier %q (%s) tidak punya API key", tier, spec.Provider)
@@ -273,7 +292,7 @@ func (r *Registry) Get(tier Tier) (Entry, error) {
 	}
 
 	r.built[tier] = m
-	return Entry{Model: m, Rates: spec.Rates, Name: spec.Model}, nil
+	return Entry{Model: m, Rates: spec.Rates, Name: spec.Model, MaxOutputTokens: spec.MaxOutputTokens}, nil
 }
 
 // Spec exposes a tier's resolved configuration, for diagnostics pages.
@@ -291,4 +310,15 @@ func parseFloat(s string) (float64, bool) {
 		return 0, false
 	}
 	return f, true
+}
+
+func parseInt(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	var n int
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return 0, false
+	}
+	return n, true
 }
