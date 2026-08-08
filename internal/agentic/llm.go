@@ -136,14 +136,16 @@ func (c caller) attempt(ctx context.Context, req *model.Request) (completion, er
 
 // completeJSON asks for a structured reply and decodes it into out.
 //
-// out must be a pointer. The JSON schema is derived from its type by
-// reflection, so the contract lives in the Go struct — there is no
-// hand-maintained schema to drift out of step with it.
+// out must be a pointer. The contract lives in the Go struct: the request-level
+// schema and the prompt-level shape are both derived from it by reflection, so
+// there is no hand-maintained schema to drift out of step. The shape is
+// appended to the user message because not every provider adapter forwards the
+// request-level schema — see jsonshape.go for what that silently cost.
 func (c caller) completeJSON(ctx context.Context, system, user string, out any, desc string) error {
 	req := model.NewRequest(
 		[]model.Message{
 			model.NewSystemMessage(system),
-			model.NewUserMessage(user),
+			model.NewUserMessage(user + contractFor(out)),
 		},
 		model.WithStructuredOutputJSON(out, true, desc),
 	)

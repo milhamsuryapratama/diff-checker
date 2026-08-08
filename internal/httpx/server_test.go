@@ -271,3 +271,34 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+
+// The report page must present fixes next to the change that needs them, not
+// in a separate list the reader has to correlate by paragraph number.
+func TestReportShowsActionsInsideChanges(t *testing.T) {
+	h := newTestServer(t)
+	id := upload(t, h, "kitchen_sink")
+	waitForJob(t, h, id)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/jobs/"+id+"/report", nil))
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "Perubahan &amp; tindakan") {
+		t.Error("combined change/action section missing")
+	}
+	// Titles must say what happened, not just where.
+	if !strings.Contains(body, "Teks dihapus pada") {
+		t.Errorf("change titles are not descriptive")
+	}
+	// A finding block must appear inside a change block, before the separate
+	// list of unattached findings starts.
+	change := strings.Index(body, "change-block")
+	mini := strings.Index(body, "mini-finding")
+	orphans := strings.Index(body, "Temuan lain")
+	if change < 0 || mini < 0 {
+		t.Fatal("no finding rendered inside a change block")
+	}
+	if !(change < mini && (orphans < 0 || mini < orphans)) {
+		t.Error("finding is not nested inside its change block")
+	}
+}

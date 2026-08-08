@@ -119,7 +119,7 @@ func (c caller) finalJSON(
 		messages = append(messages, model.NewAssistantMessage(nudge))
 	}
 	messages = append(messages, model.NewUserMessage(
-		"Sekarang keluarkan jawaban akhir dalam JSON sesuai skema."))
+		"Sekarang keluarkan jawaban akhir dalam JSON."+contractFor(out)))
 
 	req := model.NewRequest(messages, model.WithStructuredOutputJSON(out, true, desc))
 	req.Stream = true

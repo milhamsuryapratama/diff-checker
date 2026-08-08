@@ -1,6 +1,7 @@
 {{template "head" (dict "Title" "Laporan")}}
 {{$job := .Job}}
 {{$r := .Report}}
+{{$view := .View}}
 
 <section class="card">
   <div class="report-head">
@@ -30,10 +31,85 @@
   </p>
 </section>
 
-{{if $r.Findings}}
+{{if $view.Changes}}
 <section class="card">
-  <h2>Temuan</h2>
-  {{range $r.Findings}}
+  <h2>Perubahan &amp; tindakan ({{len $view.Changes}})</h2>
+  <p class="hint">
+    Setiap perubahan ditampilkan bersama temuan dan usulan tindakannya.
+  </p>
+
+  {{range $view.Changes}}
+    {{$c := .Change}}
+    <article class="change-block {{if $c.Cosmetic}}cosmetic{{end}}">
+      <header class="change-head">
+        <h3 class="change-title">{{.Title}}</h3>
+        <div class="change-meta">
+          {{if $c.Cosmetic}}<span class="chip">kosmetik</span>{{end}}
+          {{if $c.Context}}<span class="chip chip-loc">{{$c.Context}}</span>{{end}}
+          {{range .Findings}}
+            <span class="chip chip-sev {{severityClass .Severity}}">{{.Severity}}</span>
+          {{end}}
+        </div>
+      </header>
+
+      {{if $c.PrevHTML}}<p class="side prev">{{highlight $c.PrevHTML}}</p>{{end}}
+      {{if $c.CurrHTML}}<p class="side curr">{{highlight $c.CurrHTML}}</p>{{end}}
+
+      {{if .Findings}}
+        <div class="change-findings">
+          {{range .Findings}}
+            <div class="mini-finding {{severityClass .Severity}}">
+              <div class="mini-head">
+                <span class="sev">{{.Severity}}</span>
+                <span class="badge {{classBadge .Class}}">
+                  {{if eq (printf "%s" .Class) "advisory"}}saran AI{{else}}terverifikasi{{end}}
+                </span>
+                <span class="cat">{{.Category}}</span>
+                {{if and (eq (printf "%s" .Class) "advisory") .Confidence}}
+                  <span class="conf" title="keyakinan model">{{pct .Confidence}}</span>
+                {{end}}
+              </div>
+              <p class="msg">{{.Message}}</p>
+              {{range .Evidence}}<p class="evidence">{{.}}</p>{{end}}
+
+              {{if .Actions}}
+                {{range .Actions}}
+                  <div class="action action-{{.Type}}">
+                    <span class="action-type">usul: {{.Type}}</span>
+                    {{if eq (printf "%s" .Type) "manual_review"}}
+                      <span>{{.Rationale}}</span>
+                    {{else}}
+                      {{if .ParagraphIndex}}<span class="where">[{{.ParagraphIndex}}]</span>{{end}}
+                      <span class="old">{{.Old}}</span>
+                      <span class="arrow">→</span>
+                      <span class="new">{{.New}}</span>
+                      {{if .Rationale}}<span class="why">{{.Rationale}}</span>{{end}}
+                    {{end}}
+                  </div>
+                {{end}}
+              {{else}}
+                <p class="no-action">Tidak ada usulan otomatis — perlu ditinjau manual.</p>
+              {{end}}
+            </div>
+          {{end}}
+        </div>
+      {{else}}
+        <p class="no-action">Tidak ada temuan struktural pada perubahan ini.</p>
+      {{end}}
+    </article>
+  {{end}}
+</section>
+{{end}}
+
+{{if $view.Orphans}}
+<section class="card">
+  <h2>Temuan lain ({{len $view.Orphans}})</h2>
+  <p class="hint">
+    Temuan yang tidak terikat pada satu perubahan teks tertentu — misalnya cacat
+    penomoran yang sudah ada sebelumnya, atau bagian yang dihapus seluruhnya.
+  </p>
+
+  {{range $view.Orphans}}
     <article class="finding {{severityClass .Severity}}">
       <header>
         <span class="sev">{{.Severity}}</span>
@@ -57,10 +133,11 @@
 
       {{range .Actions}}
         <div class="action action-{{.Type}}">
-          <span class="action-type">{{.Type}}</span>
+          <span class="action-type">usul: {{.Type}}</span>
           {{if eq (printf "%s" .Type) "manual_review"}}
             <span>{{.Rationale}}</span>
           {{else}}
+            {{if .ParagraphIndex}}<span class="where">[{{.ParagraphIndex}}]</span>{{end}}
             <span class="old">{{.Old}}</span>
             <span class="arrow">→</span>
             <span class="new">{{.New}}</span>
@@ -71,27 +148,11 @@
     </article>
   {{end}}
 </section>
-{{else}}
-<section class="card">
-  <h2>Temuan</h2>
-  <p class="ok-big">Tidak ada masalah penomoran atau rujukan silang.</p>
-</section>
 {{end}}
 
-{{if $r.Changes}}
+{{if and (not $view.Changes) (not $view.Orphans)}}
 <section class="card">
-  <h2>Perubahan teks ({{len $r.Changes}})</h2>
-  {{range $r.Changes}}
-    <article class="change {{if .Cosmetic}}cosmetic{{end}}">
-      <header>
-        <span class="ctype">{{.Type}}</span>
-        {{if .Cosmetic}}<span class="chip">kosmetik</span>{{end}}
-        {{if .Context}}<span class="cctx">{{.Context}}</span>{{end}}
-      </header>
-      {{if .PrevHTML}}<p class="side prev">{{highlight .PrevHTML}}</p>{{end}}
-      {{if .CurrHTML}}<p class="side curr">{{highlight .CurrHTML}}</p>{{end}}
-    </article>
-  {{end}}
+  <p class="ok-big">Tidak ada perubahan maupun temuan struktural.</p>
 </section>
 {{end}}
 

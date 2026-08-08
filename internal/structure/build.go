@@ -91,7 +91,7 @@ func Build(doc *docmodel.IndexedDoc) {
 			continue
 		}
 
-		if m, ok := docmodel.ParseMarker(p.Text); ok {
+		if m, ok := docmodel.ParseMarker(p.Text); ok && plausibleMarker(m, stack, markerLevel(m)) {
 			mk := m // copy; the sibling pass may rewrite Kind/Ordinal
 			attach(&docmodel.Node{
 				Kind:      markerNodeKind(m),
@@ -175,6 +175,46 @@ func markerNodeKind(m docmodel.Marker) docmodel.NodeKind {
 		return docmodel.KindAyat
 	}
 	return docmodel.KindAngka
+}
+
+// maxSequenceStart is the highest ordinal a marker may carry when it opens a
+// new sibling list. Real lists begin near 1; nothing legitimate starts at item
+// 105 or 436.
+const maxSequenceStart = 26
+
+// plausibleMarker rejects text that parses as a marker but cannot be one here.
+//
+// The case this exists for is the Indonesian company prefix: a paragraph
+// beginning "PT. ABC Sejahtera" parses as an uppercase alpha marker, because
+// "PT" is two letters and spreadsheet-column arithmetic happily reads it as
+// ordinal 436. Left alone it invents a `huruf:PT` node, and the numbering
+// validator then reports every later "PT." in the document as a duplicate of
+// it — on a real NDA that was six false findings out of twenty-one, which is
+// the kind of noise that makes a reviewer stop trusting the whole report.
+//
+// The rule is about sequences rather than about "PT" specifically: a marker
+// that continues a list already open is always accepted, however large its
+// ordinal, because the list itself establishes that the numbering is real. A
+// marker that would *open* a new list must look like the start of one. That
+// also catches "CV." (reads as roman 105) and stray initials, without a
+// blacklist and without touching genuine long lists, which reach "aa" only by
+// passing through "z" first.
+func plausibleMarker(m docmodel.Marker, stack []*docmodel.Node, level int) bool {
+	if m.Ordinal <= maxSequenceStart {
+		return true
+	}
+	// Ambiguous readings keep their alternative: "IV." is roman 4 as well as
+	// alpha 256, and the sibling pass decides which. Judging it on the alpha
+	// ordinal here would throw away a perfectly ordinary roman marker.
+	if m.Ambiguous && m.AltOrdinal <= maxSequenceStart {
+		return true
+	}
+	for i := len(stack) - 1; i >= 1; i-- {
+		if om := stack[i].Marker; om != nil && sameFamily(*om, m) {
+			return true // continues an established list
+		}
+	}
+	return false
 }
 
 // sameFamily reports whether two markers belong to the same list: same symbol

@@ -22,6 +22,7 @@ import (
 
 	"github.com/milhamsuryapratama/diff-checker/internal/agentic/models"
 	"github.com/milhamsuryapratama/diff-checker/internal/jobs"
+	"github.com/milhamsuryapratama/diff-checker/internal/report"
 )
 
 // maxUpload bounds a single uploaded document.
@@ -242,6 +243,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "report.gohtml", map[string]any{
 		"Job":    job,
 		"Report": job.Report,
+		"View":   report.BuildView(job.Report),
 	})
 }
 

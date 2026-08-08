@@ -133,6 +133,22 @@ func (p *Pipeline) triageNode(ctx context.Context, s graph.State) (any, error) {
 		return nil, err
 	}
 
+	// A reply that decoded into an entirely empty verdict is not a verdict.
+	// Go's json.Unmarshal ignores unknown fields, so a model answering with
+	// different field names yields exactly this: Substantive=false with no
+	// reason and no IDs — indistinguishable, until you look, from a confident
+	// "nothing substantive here". Treating it as a real answer is how the whole
+	// AI tier silently no-ops. Fail open instead: analyse everything, since the
+	// cost of examining a cosmetic change is money and the cost of skipping a
+	// substantive one is a missed legal risk.
+	if !out.Substantive && out.Reason == "" && len(out.ChangeIDs) == 0 {
+		return setTriage(&TriageVerdict{
+			Substantive: true,
+			ChangeIDs:   changeIDs(substantive),
+			Reason:      "Hasil penyaringan tidak dapat dibaca; seluruh perubahan dianalisis untuk keamanan.",
+		}), nil
+	}
+
 	// A model that says "substantive" but names no changes has contradicted
 	// itself. Fall back to every candidate rather than silently analysing none.
 	if out.Substantive && len(out.ChangeIDs) == 0 {

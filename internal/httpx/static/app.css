@@ -181,3 +181,31 @@ footer {
   max-width: 960px; margin: 0 auto; padding: 0 1.5rem 2.5rem;
   color: var(--muted); font-size: .82rem;
 }
+
+/* --- change blocks: each edit shown with its findings and fixes inline ---- */
+
+.change-block {
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: .85rem 1rem; margin-bottom: 1rem;
+}
+.change-block.cosmetic { opacity: .68; }
+
+.change-head { margin-bottom: .55rem; }
+.change-title { font-size: 1rem; margin: 0 0 .3rem; font-weight: 650; }
+.change-meta { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+.chip-loc { color: var(--accent); border-color: currentColor; }
+.chip-sev { border-color: currentColor; font-weight: 700; text-transform: uppercase; }
+
+.change-findings {
+  margin-top: .7rem; padding-top: .6rem; border-top: 1px dashed var(--line);
+  display: flex; flex-direction: column; gap: .7rem;
+}
+.mini-finding { border-left: 3px solid currentColor; padding-left: .7rem; }
+.mini-head { display: flex; gap: .45rem; align-items: center; flex-wrap: wrap; }
+.mini-head .sev {
+  text-transform: uppercase; font-size: .68rem; font-weight: 800; letter-spacing: .04em;
+}
+.mini-finding .msg { color: var(--ink); margin: .25rem 0; font-size: .9rem; }
+
+.no-action { color: var(--muted); font-size: .82rem; margin: .5rem 0 0; font-style: italic; }
+.action .where { font-family: ui-monospace, monospace; color: var(--muted); font-size: .78rem; }

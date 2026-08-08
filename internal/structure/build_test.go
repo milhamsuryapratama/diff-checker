@@ -266,3 +266,52 @@ func TestParseHeading(t *testing.T) {
 		})
 	}
 }
+
+// A paragraph starting with an Indonesian company prefix must not be read as a
+// list marker. "PT" parses as uppercase-alpha ordinal 436, which used to invent
+// a huruf node and make the numbering validator report every later "PT." as a
+// duplicate of it.
+func TestCompanyPrefixIsNotAMarker(t *testing.T) {
+	doc := docFromLines(t,
+		`PT. ABC Sejahtera, a limited liability company incorporated in Indonesia.`,
+		`PT. Berau Coal, a limited liability company incorporated in Indonesia.`,
+		`CV. Maju Jaya, a partnership incorporated in Indonesia.`,
+	)
+	Build(doc)
+
+	for id := range doc.Nodes {
+		if strings.Contains(id, "PT") || strings.Contains(id, "CV") {
+			t.Errorf("company prefix became a structural node: %q", id)
+		}
+	}
+}
+
+// The guard must not break real lists, which reach two-letter markers only by
+// counting through the single-letter ones first.
+func TestLongListReachesTwoLetterMarkers(t *testing.T) {
+	lines := []string{"Pasal 1"}
+	for i := 0; i < 27; i++ {
+		lines = append(lines, string(rune('a'+i%26))+". isi butir")
+	}
+	// The 27th item is "aa." in a genuine sequence: it continues an open list.
+	lines[len(lines)-1] = "aa. isi butir terakhir"
+
+	doc := docFromLines(t, lines...)
+	Build(doc)
+
+	found := false
+	for id := range doc.Nodes {
+		if strings.HasSuffix(id, ":aa") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("two-letter marker continuing an open list was rejected")
+	}
+}
+
+// docFromLines builds an indexed document from literal paragraph lines.
+func docFromLines(t *testing.T, lines ...string) *docmodel.IndexedDoc {
+	t.Helper()
+	return ingest.ParseTextBytes("test.txt", []byte(strings.Join(lines, "\n")))
+}
