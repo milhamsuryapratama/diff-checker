@@ -14,9 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # go-version-file, not a pinned string: modernc.org/sqlite now requires
+      # go >= 1.25, so go.mod's own directive is 1.25.0. A runner pinned below
+      # that forces GOTOOLCHAIN=auto to fetch go1.25.0 as a module instead of
+      # installing it — that fetched "toolchain" is trimmed and ships without
+      # go tool covdata, which -coverprofile needs. Following go.mod keeps the
+      # installed toolchain complete, and keeps this step from drifting out of
+      # sync with go.mod again.
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
           cache: true
 
       # pdftotext backs the PDF ingest path; without it those tests would be
