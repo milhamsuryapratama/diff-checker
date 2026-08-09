@@ -149,7 +149,21 @@ func buildChange(dmp *diffmatchpatch.DiffMatchPatch, prev, curr *docmodel.Indexe
 	} else if owner := ownerFor(prev, prevIdx); owner != nil {
 		c.Context, c.NodeID = owner.Path(), owner.ID
 	}
+
+	// A clause inside a schedule is unfindable by paragraph number alone, so
+	// the table cell travels with the change.
+	c.TableRef = tableRefFor(curr, currIdx)
+	if c.TableRef == "" {
+		c.TableRef = tableRefFor(prev, prevIdx)
+	}
 	return c
+}
+
+func tableRefFor(doc *docmodel.IndexedDoc, idx []int) string {
+	if doc == nil || len(idx) == 0 || idx[0] >= len(doc.Paragraphs) {
+		return ""
+	}
+	return doc.Paragraphs[idx[0]].TableRef()
 }
 
 func ownerFor(doc *docmodel.IndexedDoc, idx []int) *docmodel.Node {

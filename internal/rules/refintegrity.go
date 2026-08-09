@@ -25,7 +25,7 @@ func CheckReferences(doc *docmodel.IndexedDoc) []docmodel.Finding {
 	}
 	var out []docmodel.Finding
 	for _, r := range doc.References {
-		if _, ok := resolve(doc, r); ok {
+		if _, ok := Resolve(doc, r); ok {
 			continue
 		}
 		out = append(out, docmodel.Finding{
@@ -67,14 +67,14 @@ func CompareReferences(prev, curr *docmodel.IndexedDoc) []docmodel.Finding {
 	relocations := map[string]*docmodel.Node{}
 
 	for _, r := range curr.References {
-		if _, ok := resolve(curr, r); ok {
+		if _, ok := Resolve(curr, r); ok {
 			continue
 		}
 
 		targetID := r.TargetID()
 		existedBefore := false
 		if targetID != "" {
-			if _, ok := resolve(prev, r); ok {
+			if _, ok := Resolve(prev, r); ok {
 				existedBefore = true
 			}
 		}
@@ -142,8 +142,13 @@ func CompareReferences(prev, curr *docmodel.IndexedDoc) []docmodel.Finding {
 	return out
 }
 
-// resolve looks a reference's target up in a document.
-func resolve(doc *docmodel.IndexedDoc, r docmodel.Reference) (*docmodel.Node, bool) {
+// Resolve looks a reference's target up in a document.
+//
+// Exported because the agentic tool layer resolves citations on the model's
+// behalf and must do it exactly the way the deterministic checker does —
+// two subtly different resolvers would let the LLM tier contradict a verified
+// finding.
+func Resolve(doc *docmodel.IndexedDoc, r docmodel.Reference) (*docmodel.Node, bool) {
 	if doc == nil || r.Pasal == "" {
 		return nil, false
 	}

@@ -34,3 +34,6 @@ go.work.sum
 # Build artifacts
 bin/
 coverage.out
+
+# runtime state: SQLite database and uploaded documents
+/data/

@@ -22,7 +22,7 @@ Prinsip desainnya: **deterministik dulu, LLM belakangan.**
 | Highlight kata yang berubah | Go — word-level diff |
 | Validasi urutan penomoran | Go — walk marker sequence |
 | Deteksi broken cross-reference | Go — grammar referensi + resolve ke tree |
-| Klasifikasi makna & risiko legal | LLM (belum diimplementasi) |
+| Klasifikasi makna & risiko legal | LLM — hanya di sini |
 
 Konsekuensinya, setiap temuan diberi kelas yang tampil jelas:
 
@@ -32,8 +32,8 @@ Konsekuensinya, setiap temuan diberi kelas yang tampil jelas:
 
 ## Status
 
-Mesin deterministik sudah berjalan penuh dan **tidak membutuhkan API key**.
-Lapisan agentic dan UI web belum ada.
+Mesin deterministik, lapisan agentic, dan UI web sudah berjalan.
+**Seluruh pemeriksaan penomoran dan referensi silang bekerja tanpa API key.**
 
 | Komponen | Status |
 |---|---|
@@ -44,17 +44,90 @@ Lapisan agentic dan UI web belum ada.
 | Validator penomoran | ✅ |
 | Validator integritas referensi | ✅ |
 | CLI `diffctl` | ✅ |
-| Lapisan agentic (trpc-agent-go) | ⬜ |
-| UI web + SSE | ⬜ |
+| Lapisan agentic (trpc-agent-go) | ✅ |
+| Grounding validator | ✅ |
+| UI web + job queue + SSE | ✅ |
+| Catatan proses berpikir agent (live + tersimpan) | ✅ |
+| Penyimpanan SQLite (tahan restart) | ✅ |
+| Golden-set eval harness | ⬜ |
+| Auto-fix DOCX | ⬜ |
+
+## Prasyarat
+
+Semuanya opsional kecuali Go — tanpa `poppler-utils`, ingest `.docx`/`.txt`/`.md`
+tetap berjalan penuh; hanya input `.pdf` yang butuh alat ini.
+
+| Alat | Untuk apa | Wajib? |
+|---|---|---|
+| Go 1.24+ | build & jalankan | ya |
+| `poppler-utils` (`pdftotext`) | membaca input `.pdf` | hanya jika perlu ingest PDF |
+| `libreoffice` (`soffice`) | `make fixtures` — generate ulang fixture uji | hanya untuk kontribusi ke `testdata/` |
+
+Kenapa `pdftotext`, bukan library Go murni: dokumen hukum sering multi-kolom
+dan bertabel, dan `pdftotext -layout` jauh lebih andal menjaga **urutan baca**
+dibanding library ekstraksi PDF pure-Go yang tersedia gratis — parser struktur
+Pasal/ayat/huruf bergantung pada urutan itu. Kalau tidak terpasang, `diffctl`
+memberi pesan error dengan command instalasi yang tepat untuk OS kamu.
+
+```bash
+# macOS
+brew install poppler
+
+# Debian / Ubuntu
+sudo apt install poppler-utils
+
+# Fedora / RHEL
+sudo dnf install poppler-utils
+
+# Windows
+# unduh dari https://github.com/oschwartz10612/poppler-windows
+# lalu tambahkan folder bin/ ke PATH
+```
+
+Docker (`Dockerfile` di repo ini) sudah meng-install `poppler-utils` secara
+otomatis — tidak perlu langkah tambahan untuk deploy via container.
 
 ## Menjalankan
 
 ```bash
-make build          # -> bin/diffctl, bin/server
-make test           # seluruh test
-make check          # yang dijalankan CI: fmt, vet, test, verify
-make demo           # bandingkan pasangan dokumen contoh
+make build            # -> bin/diffctl, bin/server
+make test             # seluruh test
+make check            # yang dijalankan CI: fmt, vet, test, verify
+make demo             # bandingkan pasangan dokumen contoh
+make demo-scenarios   # jalankan 6 skenario fixture DOCX
+make run              # server web di :8080
 ```
+
+### UI web
+
+```bash
+make run    # http://localhost:8080
+```
+
+Unggah dua dokumen, lihat checklist progres terisi lewat SSE, baca laporannya.
+Tanpa API key, opsi analisis AI otomatis dinonaktifkan dan pemeriksaan
+deterministik tetap berjalan penuh.
+
+Setiap langkah mencatat **proses berpikirnya** — apa yang dibaca parser, urutan
+penomoran apa yang direncanakan, dan (bila lapisan AI aktif) penalaran model
+beserta tool yang dipanggilnya. Catatan itu tampil live sewaktu langkahnya
+berjalan, bisa dilipat, dan ikut tersimpan sehingga tetap ada setelah halaman
+ditutup atau server dimulai ulang.
+
+Seluruh data disimpan di SQLite (`data/diff-checker.db` secara default), jadi
+job, laporan, dan catatannya tidak hilang saat server restart. Job yang sedang
+berjalan ketika server berhenti ditandai gagal — status pipeline-nya ada di
+memori eksekutor, bukan di basis data, jadi tidak bisa dilanjutkan.
+
+| Route | Isi |
+|---|---|
+| `GET /` | Form unggah + daftar perbandingan terakhir |
+| `POST /compare` | Terima unggahan, buat job, redirect |
+| `GET /jobs/{id}` | Halaman progres (checklist via SSE) |
+| `GET /jobs/{id}/events` | Stream SSE |
+| `GET /jobs/{id}/report` | Laporan lengkap |
+| `GET /jobs/{id}/export.json` | Ekspor mentah — sekaligus kontrak API awal |
+| `GET /jobs/{id}/debug.json` | Struktur mentah kedua dokumen (paragraf, pohon BAB/Pasal/ayat, rujukan) plus rencana penomoran dan temuan lokal sebelum ditimpa rencana itu — dihitung ulang dari file asli tiap diminta, tidak disimpan permanen |
 
 ### Membandingkan dua dokumen
 
@@ -66,6 +139,16 @@ diffctl compare sebelum.docx sesudah.docx --json      # laporan JSON
 
 Status keluar bisa dipakai sebagai gerbang CI:
 `0` bersih, `1` ada temuan mayor (dengan `--fail-on-major`), `2` ada temuan kritis.
+
+### Dengan lapisan AI
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+diffctl compare sebelum.docx sesudah.docx --ai
+diffctl compare sebelum.docx sesudah.docx --ai --cost   # + rincian biaya token
+```
+
+Tanpa `--ai`, tidak ada satu pun panggilan jaringan.
 
 ### Memeriksa struktur satu dokumen
 
@@ -104,7 +187,7 @@ Temuan (5 terverifikasi, 0 saran AI)
 | Format | Catatan |
 |---|---|
 | `.docx` | Paragraf termasuk isi tabel. Tracked changes diselesaikan ke tampilan *accepted*. |
-| `.pdf` | Butuh `pdftotext` (paket `poppler-utils`). PDF hasil scan ditolak dengan pesan jelas — OCR di luar cakupan v1. |
+| `.pdf` | Butuh `pdftotext`, lihat [Prasyarat](#prasyarat). PDF hasil scan ditolak dengan pesan jelas — OCR di luar cakupan v1. |
 | `.txt`, `.md` | Satu baris = satu paragraf. |
 
 ## Arsitektur
@@ -117,13 +200,84 @@ internal/
   textdiff/    word-level diff + highlight <b>
   rules/       validator penomoran & integritas referensi (deterministik)
   report/      perakitan laporan + renderer teks
+  agentic/     graph LLM: state, node, prompt, tool, registry model
+  ground/      validator grounding — aksi karangan model ditolak di sini
+  trace/       catatan langkah: nota deterministik, penalaran model, panggilan tool
+  jobs/        job store (SQLite), worker pool, hub event SSE
+  httpx/       handler HTTP + template + aset (embed)
 cmd/
   diffctl/     CLI
-  server/      web server (masih kerangka)
+  server/      web server
 ```
 
 Skema pengalamatan `[N]` per paragraf konsisten di seluruh tahap: setiap temuan,
 referensi, dan usulan aksi menunjuk paragraf dengan indeks yang sama.
+
+### Pipeline
+
+```
+start ──┬── ingest_prev ──┐
+        └── ingest_curr ──┴── deterministic ── triage ──┬── analyze ── recommend ──┐
+                                                        └──────────────────────────┴── assemble
+```
+
+`deterministic` menjalankan seluruh mesin Fase 1 dan menghasilkan temuan
+`verified`. Conditional edge sesudah `triage` melewati kedua node berbayar
+ketika revisi ternyata hanya kosmetik — pengendali biaya utama desain ini.
+
+Node `analyze` bersifat *agentic*: ia menerima ringkasan perubahan, bukan
+seluruh dokumen, lalu memanggil tool Go (`get_paragraph`, `resolve_reference`,
+`find_references_to`, …) untuk menarik konteks yang ia butuhkan sendiri.
+
+### Konfigurasi model
+
+Tiering per node, semuanya bisa di-override lewat environment:
+
+| Tier | Default | Peran |
+|---|---|---|
+| `triage` | Claude Haiku 4.5 | kosmetik vs substantif |
+| `analyze` | Claude Sonnet 5 | klasifikasi makna |
+| `recommend` | Claude Opus 5 | risiko hukum + rekomendasi |
+
+```bash
+# Semua tier ke satu endpoint OpenAI-compatible
+export DIFF_PROVIDER=openai DIFF_MODEL=deepseek-chat
+export DIFF_BASE_URL=https://api.deepseek.com/v1 OPENAI_API_KEY=...
+
+# Atau per tier
+export DIFF_MODEL_RECOMMEND=claude-opus-5
+export DIFF_RATE_IN_RECOMMEND=5 DIFF_RATE_OUT_RECOMMEND=25
+```
+
+## Menjamin output tepat
+
+Lapisan yang membuat saran AI bisa dipercaya, dari yang paling murah:
+
+1. **Structured output** — skema JSON diturunkan lewat refleksi dari struct Go.
+2. **Grounding validator** (`internal/ground`) — setiap aksi dicek terhadap
+   dokumen nyata. Teks `old` yang tidak muncul persis di paragraf yang disebut
+   **ditolak**, modelnya diberi tahu apa yang salah, lalu diminta ulang sekali.
+3. **Pemisahan verified/advisory** — temuan deterministik tidak pernah melewati
+   LLM, jadi tidak bisa terdegradasi olehnya.
+4. **Taksonomi & rubrik severity tertutup** — enum, bukan teks bebas, sehingga
+   hasilnya bisa dievaluasi dan dibandingkan antar-run.
+
+Kolom `cache read` pada rincian biaya harus &gt; 0 pada perbandingan kedua dan
+seterusnya. Kalau selalu nol, ada yang membuat prefix prompt berubah antar
+permintaan dan asumsi biaya tidak lagi berlaku.
+
+## Fixture uji
+
+`testdata/scenarios/` berisi enam pasang dokumen DOCX + PDF (masing-masing ≥3
+halaman) yang mencakup perubahan teks murni, cacat penomoran, referensi rusak,
+referensi yang pindah, kontrak berpenomoran desimal, dan gabungan ketiganya.
+Temuan aktualnya didokumentasikan di
+[`testdata/scenarios/MANIFEST.md`](testdata/scenarios/MANIFEST.md).
+
+```bash
+make fixtures         # regenerasi (butuh libreoffice-writer + poppler-utils)
+make demo-scenarios   # jalankan semuanya lewat mesin deterministik
+```
 
 ## Lisensi
 

@@ -1,0 +1,213 @@
+{{template "head" (dict "Title" "Laporan")}}
+{{$job := .Job}}
+{{$r := .Report}}
+{{$view := .View}}
+
+<section class="card">
+  <div class="report-head">
+    <div>
+      <h1>Laporan perbandingan</h1>
+      <p class="lede">{{$job.PrevName}} → {{$job.CurrName}}</p>
+    </div>
+    <div class="report-actions">
+      <a class="btn" href="/jobs/{{$job.ID}}/export.json">Ekspor JSON</a>
+      <a class="btn btn-quiet" href="/jobs/{{$job.ID}}/debug.json" title="Struktur dokumen mentah: paragraf, pohon BAB/Pasal/ayat, rujukan, dan rencana penomoran — untuk menelusuri kenapa sebuah temuan tidak dapat aksi otomatis">Debug struktur</a>
+      <a class="btn btn-quiet" href="/">Bandingkan lagi</a>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><span class="n">{{$r.Summary.Total}}</span><span class="k">perubahan teks</span></div>
+    <div class="stat"><span class="n">{{$r.PrevArticleCount}} → {{$r.CurrArticleCount}}</span><span class="k">jumlah pasal</span></div>
+    <div class="stat"><span class="n sev-critical">{{$r.Summary.Critical}}</span><span class="k">kritis</span></div>
+    <div class="stat"><span class="n sev-major">{{$r.Summary.Major}}</span><span class="k">mayor</span></div>
+    <div class="stat"><span class="n sev-minor">{{$r.Summary.Minor}}</span><span class="k">minor</span></div>
+    <div class="stat"><span class="n">{{dur $job.Duration}}</span><span class="k">durasi</span></div>
+  </div>
+
+  <p class="class-summary">
+    <span class="badge badge-verified">{{$r.Summary.Verified}} terverifikasi</span>
+    <span class="badge badge-advisory">{{$r.Summary.Advisory}} saran AI</span>
+    {{if not $job.UseAI}}<span class="hint">— lapisan AI tidak dijalankan untuk perbandingan ini.</span>{{end}}
+  </p>
+</section>
+
+{{if $view.Changes}}
+<section class="card">
+  <h2>Perubahan &amp; tindakan ({{len $view.Changes}})</h2>
+  <p class="hint">
+    Setiap perubahan ditampilkan bersama temuan dan usulan tindakannya.
+  </p>
+
+  {{range $view.Changes}}
+    {{$c := .Change}}
+    <article class="change-block {{if $c.Cosmetic}}cosmetic{{end}}">
+      <header class="change-head">
+        <h3 class="change-title">{{.Title}}</h3>
+        <div class="change-meta">
+          {{if $c.Cosmetic}}<span class="chip">kosmetik</span>{{end}}
+          {{if $c.Context}}<span class="chip chip-loc">{{$c.Context}}</span>{{end}}
+          {{if $c.TableRef}}<span class="chip chip-loc">{{$c.TableRef}}</span>{{end}}
+          {{range .Findings}}
+            <span class="chip chip-sev {{severityClass .Severity}}">{{.Severity}}</span>
+          {{end}}
+        </div>
+      </header>
+
+      {{if $c.PrevHTML}}<p class="side prev">{{highlight $c.PrevHTML}}</p>{{end}}
+      {{if $c.CurrHTML}}<p class="side curr">{{highlight $c.CurrHTML}}</p>{{end}}
+
+      {{if .Findings}}
+        <div class="change-findings">
+          {{range .Findings}}
+            <div class="mini-finding {{severityClass .Severity}}">
+              <div class="mini-head">
+                <span class="sev">{{.Severity}}</span>
+                <span class="badge {{classBadge .Class}}">
+                  {{if eq (printf "%s" .Class) "advisory"}}saran AI{{else}}terverifikasi{{end}}
+                </span>
+                <span class="cat">{{.Category}}</span>
+                {{if and (eq (printf "%s" .Class) "advisory") .Confidence}}
+                  <span class="conf" title="keyakinan model">{{pct .Confidence}}</span>
+                {{end}}
+              </div>
+              <p class="msg">{{.Message}}</p>
+              {{range .Evidence}}<p class="evidence">{{.}}</p>{{end}}
+
+              {{if .Actions}}
+                {{range .Actions}}
+                  <div class="action action-{{.Type}}">
+                    <span class="action-type">usul: {{.Type}}</span>
+                    {{if eq (printf "%s" .Type) "manual_review"}}
+                      <span>{{.Rationale}}</span>
+                    {{else}}
+                      {{if .ParagraphIndex}}<span class="where">[{{.ParagraphIndex}}]</span>{{end}}
+                      <span class="old">{{.Old}}</span>
+                      <span class="arrow">→</span>
+                      <span class="new">{{.New}}</span>
+                      {{if .Rationale}}<span class="why">{{.Rationale}}</span>{{end}}
+                    {{end}}
+                  </div>
+                {{end}}
+              {{else}}
+                <p class="no-action">Tidak ada usulan otomatis — perlu ditinjau manual.</p>
+              {{end}}
+            </div>
+          {{end}}
+        </div>
+      {{else}}
+        <p class="no-action">Tidak ada temuan struktural pada perubahan ini.</p>
+      {{end}}
+    </article>
+  {{end}}
+</section>
+{{end}}
+
+{{if $view.Renumbering}}
+<section class="card">
+  <h2>Rencana penomoran keseluruhan</h2>
+  <p class="hint">
+    Satu rencana untuk seluruh dokumen, bukan perbaikan per temuan. Setiap baris
+    menunjukkan urutan sebelum dan sesudah seluruh usulan di atas diterapkan —
+    inilah cara memastikan hasil akhirnya benar-benar urut.
+  </p>
+  <ul class="plan">
+    {{range $view.Renumbering}}<li class="mono">{{.}}</li>{{end}}
+  </ul>
+  {{if $view.PlanWarnings}}
+    <p class="hint failed">Masih tersisa setelah rencana diterapkan:</p>
+    <ul class="plan">
+      {{range $view.PlanWarnings}}<li class="mono failed">{{.}}</li>{{end}}
+    </ul>
+  {{else}}
+    <p class="hint ok">Diverifikasi: setelah rencana ini diterapkan, seluruh urutan penomoran sudah benar.</p>
+  {{end}}
+</section>
+{{end}}
+
+{{if $view.Warnings}}
+<section class="card">
+  <h2>Peringatan ({{len $view.Warnings}})</h2>
+  <p class="hint">
+    Hal yang perlu diketahui tetapi tidak diberi usulan otomatis — misalnya
+    rujukan yang tidak lagi ditemukan, yang perbaikannya bergantung pada maksud
+    penyusun, bukan pada aturan.
+  </p>
+
+  {{range $view.Warnings}}
+    <article class="finding {{severityClass .Severity}}">
+      <header>
+        <span class="sev">{{.Severity}}</span>
+        <span class="badge {{classBadge .Class}}">
+          {{if eq (printf "%s" .Class) "advisory"}}saran AI{{else}}terverifikasi{{end}}
+        </span>
+        <span class="cat">{{.Category}}</span>
+      </header>
+      <p class="msg">{{.Message}}</p>
+      <p class="loc">
+        {{if .ParaIndex}}<span>paragraf [{{.ParaIndex}}] ({{sideLabel .Side}})</span>{{end}}
+        {{if .NodeID}}<span>{{.NodeID}}</span>{{end}}
+      </p>
+      {{range .Evidence}}<p class="evidence">{{.}}</p>{{end}}
+    </article>
+  {{end}}
+</section>
+{{end}}
+
+{{if and (not $view.Changes) (not $view.Warnings)}}
+<section class="card">
+  <p class="ok-big">Tidak ada perubahan maupun temuan struktural.</p>
+</section>
+{{end}}
+
+{{if .Trace}}
+<section class="card">
+  <h2>Proses berpikir</h2>
+  <p class="hint">
+    Catatan tiap langkah: apa yang dibaca mesin, apa yang direncanakannya, dan —
+    bila lapisan AI dijalankan — apa yang dipertimbangkan model sebelum menjawab.
+  </p>
+  {{range .Trace}}
+    <details class="trace-group">
+      <summary>{{.Label}} <span class="hint">({{len .Entries}} baris)</span></summary>
+      <div class="trace">
+        {{range .Entries}}
+          <div class="trace-line trace-{{.Kind}}">{{.Text}}</div>
+        {{end}}
+      </div>
+    </details>
+  {{end}}
+</section>
+{{end}}
+
+{{if $job.Usage}}
+<section class="card">
+  <h2>Biaya token</h2>
+  <table class="usage">
+    <thead>
+      <tr><th>node</th><th>model</th><th class="num">call</th><th class="num">input</th>
+          <th class="num">cache read</th><th class="num">output</th><th class="num">USD</th></tr>
+    </thead>
+    <tbody>
+      {{range $job.Usage}}
+      <tr>
+        <td>{{.Node}}</td><td class="mono">{{.Model}}</td>
+        <td class="num">{{.Calls}}</td><td class="num">{{.Input}}</td>
+        <td class="num">{{.CacheRead}}</td><td class="num">{{.Output}}</td>
+        <td class="num">{{usd .USD}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+    <tfoot>
+      <tr><td colspan="6">Total</td><td class="num">{{usd $job.CostUSD}}</td></tr>
+    </tfoot>
+  </table>
+  <p class="hint">
+    Kolom <em>cache read</em> harus &gt; 0 pada perbandingan kedua dan seterusnya.
+    Kalau selalu nol, prefix prompt berubah antar permintaan dan asumsi biaya
+    tidak berlaku.
+  </p>
+</section>
+{{end}}
+
+{{template "foot"}}

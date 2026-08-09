@@ -78,6 +78,12 @@ const (
 	CatShiftedReference  Category = "shifted_reference"
 	CatUnresolvedRelated Category = "unresolvable_relative_reference"
 
+	// Parallel-run integrity — deterministic. A document that repeats its
+	// clauses in more than one language or script keeps those runs in lockstep;
+	// an edit to one run alone leaves a mismatch that no single run can detect
+	// from the inside.
+	CatParallelMismatch Category = "parallel_mismatch"
+
 	// Structural deltas — deterministic.
 	CatSectionAdded   Category = "section_added"
 	CatSectionRemoved Category = "section_removed"
@@ -100,6 +106,9 @@ const (
 	ActionReferenceUpdate ActionType = "reference_update"
 	// ActionManualReview flags something a machine should not fix on its own.
 	ActionManualReview ActionType = "manual_review"
+	// ActionDelete removes a heading outright, used when one parallel run
+	// carries a section its peers do not.
+	ActionDelete ActionType = "delete"
 )
 
 // Action is a concrete, applicable fix.
@@ -191,6 +200,10 @@ type Change struct {
 	Context string `json:"context,omitempty"`
 	NodeID  string `json:"node_id,omitempty"`
 
+	// TableRef locates the change inside a table when it is in one,
+	// e.g. "tabel 2 baris 3 kolom 1". Empty otherwise.
+	TableRef string `json:"table_ref,omitempty"`
+
 	// Cosmetic marks changes that are whitespace/punctuation only. Cosmetic
 	// changes are excluded from the LLM tier entirely.
 	Cosmetic bool `json:"cosmetic,omitempty"`
@@ -225,6 +238,17 @@ type Report struct {
 	// see at a glance that a document went from 24 to 25 articles.
 	PrevArticleCount int `json:"prev_article_count"`
 	CurrArticleCount int `json:"curr_article_count"`
+
+	// Renumbering summarises the document-wide numbering plan, one line per
+	// sequence ("Urutan Pasal: 2, 2, 4, 8, 6, 8 -> 1, 2, 3, 4, 5, 6"). It is
+	// what lets a reviewer confirm that a set of individually small renumber
+	// actions adds up to a correctly ordered document.
+	Renumbering []string `json:"renumbering,omitempty"`
+
+	// RenumberingWarnings lists defects that survive applying the plan. It
+	// should always be empty; a non-empty value means the plan is incomplete
+	// and must not be trusted as a full fix.
+	RenumberingWarnings []string `json:"renumbering_warnings,omitempty"`
 }
 
 // AddFinding appends a finding and keeps the summary counters in step.
