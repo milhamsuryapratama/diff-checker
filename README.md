@@ -127,6 +127,7 @@ memori eksekutor, bukan di basis data, jadi tidak bisa dilanjutkan.
 | `GET /jobs/{id}/events` | Stream SSE |
 | `GET /jobs/{id}/report` | Laporan lengkap |
 | `GET /jobs/{id}/export.json` | Ekspor mentah — sekaligus kontrak API awal |
+| `GET /jobs/{id}/debug.json` | Struktur mentah kedua dokumen (paragraf, pohon BAB/Pasal/ayat, rujukan) plus rencana penomoran dan temuan lokal sebelum ditimpa rencana itu — dihitung ulang dari file asli tiap diminta, tidak disimpan permanen |
 
 ### Membandingkan dua dokumen
 

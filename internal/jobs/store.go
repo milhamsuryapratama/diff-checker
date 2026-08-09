@@ -243,6 +243,19 @@ func (s *Store) paths(id string) (prev, curr string, ok bool) {
 	return j.prevPath, j.currPath, true
 }
 
+// DocumentPaths exposes a job's input files to callers outside this package
+// that need to re-read them from disk — the debug endpoint, which re-parses a
+// finished job's documents on demand rather than persisting a second copy of
+// their structure in every job row.
+//
+// It deliberately does not go the other way: nothing in this package ever puts
+// these paths into a Job's JSON, because the server's filesystem layout is not
+// the browser's business (see the comment on Job.prevPath/currPath). A caller
+// gets the paths to open the files itself, not to hand them onward.
+func (s *Store) DocumentPaths(id string) (prev, curr string, ok bool) {
+	return s.paths(id)
+}
+
 // update applies a mutation to a job under lock and publishes the result.
 func (s *Store) update(id string, fn func(*Job)) {
 	s.mu.Lock()

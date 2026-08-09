@@ -58,6 +58,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /jobs/{id}/events", s.handleEvents)
 	mux.HandleFunc("GET /jobs/{id}/report", s.handleReport)
 	mux.HandleFunc("GET /jobs/{id}/export.json", s.handleExport)
+	mux.HandleFunc("GET /jobs/{id}/debug.json", s.handleDebug)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", staticHandler()))
 

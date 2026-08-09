@@ -267,7 +267,7 @@ func TestUploadIgnoresClientPath(t *testing.T) {
 
 func TestUnknownJobIs404(t *testing.T) {
 	h := newTestServer(t)
-	for _, path := range []string{"/jobs/deadbeef", "/jobs/deadbeef/export.json", "/jobs/deadbeef/events"} {
+	for _, path := range []string{"/jobs/deadbeef", "/jobs/deadbeef/export.json", "/jobs/deadbeef/events", "/jobs/deadbeef/debug.json"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusNotFound {
@@ -336,5 +336,57 @@ func TestReportShowsActionsInsideChanges(t *testing.T) {
 	}
 	if !(change < mini && (orphans < 0 || mini < orphans)) {
 		t.Error("finding is not nested inside its change block")
+	}
+}
+
+// The debug endpoint exists so a case like a "terverifikasi" finding with no
+// action — which report.gohtml cannot explain on its own, since it only shows
+// the plan's final decision — can be diagnosed: this checks the raw structure
+// and the renumbering plan it's built from actually reach the response.
+func TestDebugEndpointExposesStructure(t *testing.T) {
+	h := newTestServer(t)
+	id := upload(t, h, "renumbering")
+	waitForJob(t, h, id)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/jobs/"+id+"/debug.json", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("debug.json status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload debugPayload
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode debug payload: %v", err)
+	}
+
+	if payload.Curr.Tree == nil || len(payload.Curr.Tree.Children) == 0 {
+		t.Fatal("curr document tree is empty")
+	}
+	if len(payload.Curr.Paragraphs) == 0 {
+		t.Error("curr document paragraphs are empty")
+	}
+	if len(payload.Renumbering.Sequences) == 0 {
+		t.Error("renumbering fixture should produce at least one resequenced run")
+	}
+	if len(payload.Renumbering.RawFindings) == 0 {
+		t.Error("renumbering fixture should have raw numbering findings to compare against the plan")
+	}
+	// The whole point of exposing raw findings separately from the plan is
+	// that they can disagree — checkSequence proposes a fix from its own local
+	// view (the very bug PlanRenumbering exists to correct, per the doc
+	// comment on rules.PlanRenumbering), and assemble.go's attachPlanned only
+	// ever ships the plan's answer. At least one raw finding must still carry
+	// its own locally-computed action for that comparison to be possible at
+	// all — if this ever comes back empty, raw findings stopped exposing
+	// anything the report doesn't already show.
+	hasLocalAction := false
+	for _, f := range payload.Renumbering.RawFindings {
+		if len(f.Actions) > 0 {
+			hasLocalAction = true
+			break
+		}
+	}
+	if !hasLocalAction {
+		t.Error("expected at least one raw numbering finding to carry its own locally-computed action")
 	}
 }
