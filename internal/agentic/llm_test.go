@@ -254,8 +254,8 @@ func TestToolLoopIntermediateRoundsDoNotRequestThinking(t *testing.T) {
 	}
 
 	fm := &fakeModel{replies: [][]*model.Response{
-		{toolCallMsg}, // round 1: tool-calling round, non-streamed
-		{finalMsg},    // round 2: no more tool calls -> triggers finalJSON
+		{toolCallMsg},                     // round 1: tool-calling round, non-streamed
+		{finalMsg},                        // round 2: no more tool calls -> triggers finalJSON
 		{chunk(`{"ok":true}`, true, nil)}, // finalJSON's own streamed call
 	}}
 	c := caller{entry: testEntry(fm, 4096), node: "analyze", usage: &Usage{}}
