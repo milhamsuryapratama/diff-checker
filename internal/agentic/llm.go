@@ -71,9 +71,38 @@ type completion struct {
 	Truncated bool
 }
 
+// thinkingOn is shared because model.Request.ThinkingEnabled is a *bool: Go
+// has no literal address-of for a constant, and every call needs to point at
+// the same true.
+var thinkingOn = true
+
+// applyThinking requests extended thinking at the tier's configured effort.
+//
+// Leaving ThinkingEnabled unset (nil) — its zero value, and what every request
+// in this package carried before this existed — is not "thinking with no
+// preference": the Anthropic adapter reads it as "do not ask for thinking at
+// all" and never sets the API's thinking parameter, so the model never
+// produces a thinking block and the trace UI's reasoning panel is empty by
+// construction. Setting it explicitly is what turns thinking on at all.
+//
+// This is not called for the analyze node's intermediate tool-calling rounds
+// (see completeJSONWithTools): the adapter drops ReasoningContent when it
+// re-serialises an assistant turn back into conversation history, and
+// Anthropic requires a tool-use turn's thinking block to survive that round
+// trip. Turning thinking on for a mid-loop round would make the *next* round
+// fail outright instead of just going undisplayed.
+func (c caller) applyThinking(req *model.Request) {
+	req.ThinkingEnabled = &thinkingOn
+	if c.entry.ReasoningEffort != "" {
+		effort := c.entry.ReasoningEffort
+		req.ReasoningEffort = &effort
+	}
+}
+
 // complete sends one request and collects the streamed reply into a single
 // string, retrying transient failures with exponential backoff.
 func (c caller) complete(ctx context.Context, req *model.Request) (completion, error) {
+	c.applyThinking(req)
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt > 1 {

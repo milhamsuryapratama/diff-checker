@@ -81,6 +81,15 @@ type Spec struct {
 	// the object closes. Each tier gets a budget sized to what it actually
 	// writes, not the adapter's one-size-fits-all default.
 	MaxOutputTokens int
+
+	// ReasoningEffort requests extended thinking at this level ("low", "medium",
+	// "high", "xhigh", "max") on tiers whose model supports it. Empty still
+	// turns thinking on for a supporting model, just without steering the
+	// effort — the model decides how much to think. Left unset entirely
+	// (never requested), the Anthropic API never returns a thinking block at
+	// all: the trace UI's "thinking" panel is empty by construction, not
+	// because the model had nothing to say.
+	ReasoningEffort string
 }
 
 // Registry hands out built models per tier, memoising them so that a model —
@@ -96,6 +105,7 @@ type Entry struct {
 	Rates           Rates
 	Name            string
 	MaxOutputTokens int
+	ReasoningEffort string
 }
 
 // anthropicDefaults reflect published list prices at the time of writing.
@@ -119,12 +129,15 @@ func DefaultSpecs() map[Tier]Spec {
 			Model:           "claude-haiku-4-5-20251001",
 			Rates:           anthropicRates(1, 5),
 			MaxOutputTokens: 2048,
+			// Haiku does not support adaptive thinking in this adapter; left
+			// empty since there is no effort dial to turn for it.
 		},
 		TierAnalyze: {
 			Provider:        ProviderAnthropic,
 			Model:           "claude-sonnet-5",
 			Rates:           anthropicRates(3, 15),
 			MaxOutputTokens: 8192,
+			ReasoningEffort: "medium",
 		},
 		TierRecommend: {
 			Provider: ProviderAnthropic,
@@ -133,12 +146,17 @@ func DefaultSpecs() map[Tier]Spec {
 			// Sized for MaxAdvisory (25) findings, each carrying a paragraph of
 			// risk analysis plus a rationale for its recommended action.
 			MaxOutputTokens: 16384,
+			// This is the tier the product is sold on; worth the extra thinking
+			// budget over analyze's.
+			ReasoningEffort: "high",
 		},
 		TierAdjudicate: {
 			Provider:        ProviderAnthropic,
 			Model:           "claude-opus-5",
 			Rates:           anthropicRates(5, 25),
 			MaxOutputTokens: 8192,
+			// Rarely invoked, so the highest effort is affordable here.
+			ReasoningEffort: "xhigh",
 		},
 	}
 }
@@ -154,6 +172,7 @@ func DefaultSpecs() map[Tier]Spec {
 //	DIFF_RATE_IN_<T>          USD per million input tokens
 //	DIFF_RATE_OUT_<T>         USD per million output tokens
 //	DIFF_MAX_TOKENS_<T>       output token budget for one reply
+//	DIFF_REASONING_EFFORT_<T> extended-thinking effort: low|medium|high|xhigh|max
 //
 // and globally:
 //
@@ -197,6 +216,9 @@ func FromEnv() *Registry {
 		}
 		if v, ok := parseInt(os.Getenv("DIFF_MAX_TOKENS_" + suffix)); ok {
 			spec.MaxOutputTokens = v
+		}
+		if v := os.Getenv("DIFF_REASONING_EFFORT_" + suffix); v != "" {
+			spec.ReasoningEffort = v
 		}
 
 		switch spec.Provider {
@@ -258,7 +280,7 @@ func (r *Registry) Get(tier Tier) (Entry, error) {
 		return Entry{}, fmt.Errorf("tier %q tidak dikenal", tier)
 	}
 	if m, ok := r.built[tier]; ok {
-		return Entry{Model: m, Rates: spec.Rates, Name: spec.Model, MaxOutputTokens: spec.MaxOutputTokens}, nil
+		return Entry{Model: m, Rates: spec.Rates, Name: spec.Model, MaxOutputTokens: spec.MaxOutputTokens, ReasoningEffort: spec.ReasoningEffort}, nil
 	}
 	if spec.APIKey == "" {
 		return Entry{}, fmt.Errorf("tier %q (%s) tidak punya API key", tier, spec.Provider)
@@ -292,7 +314,7 @@ func (r *Registry) Get(tier Tier) (Entry, error) {
 	}
 
 	r.built[tier] = m
-	return Entry{Model: m, Rates: spec.Rates, Name: spec.Model, MaxOutputTokens: spec.MaxOutputTokens}, nil
+	return Entry{Model: m, Rates: spec.Rates, Name: spec.Model, MaxOutputTokens: spec.MaxOutputTokens, ReasoningEffort: spec.ReasoningEffort}, nil
 }
 
 // Spec exposes a tier's resolved configuration, for diagnostics pages.

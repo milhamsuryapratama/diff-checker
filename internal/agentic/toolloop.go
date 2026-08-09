@@ -74,6 +74,16 @@ func (c caller) completeJSONWithTools(
 		}
 		msg := rsp.Choices[0].Message
 
+		// This round does not request thinking (see caller.applyThinking's doc
+		// comment: the adapter can't round-trip a tool-use turn's thinking block
+		// back to the API, so ReasoningContent is expected to be empty here).
+		// The check stays as a safety net rather than being deleted, in case
+		// that adapter limitation is ever lifted — recording it costs nothing
+		// when it's empty.
+		if msg.ReasoningContent != "" {
+			c.recorder().Note(c.traceNode, trace.KindThought, msg.ReasoningContent)
+		}
+
 		if len(msg.ToolCalls) == 0 {
 			// The model is done gathering context. Ask for the structured
 			// answer in a final call with no tools attached, so the schema is
